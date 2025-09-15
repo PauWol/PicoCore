@@ -1,10 +1,9 @@
-# PicoCore
-
-![Project Logo](docs/images/pc.png) <!-- Replace with your logo path or URL -->
+<p align="center">
+  <img src="./docs/assets/images/pc.png" alt="Description of image" width="45" height="45">
+  <span style="font-size: 4em; font-weight: bold; margin-left: 10px;">PicoCore</span>
+</p>
 
 PicoCore is a lightweight **MicroPython-based runtime and API** for the Raspberry Pi Pico and Pico W. It provides a modular foundation to build embedded projects like weather stations, rovers, or automation devices with ease and efficiency.
-
----
 
 ## 🚀 Features
 
@@ -13,8 +12,6 @@ PicoCore is a lightweight **MicroPython-based runtime and API** for the Raspberr
 - Configurable via `config.toml`
 - Optimized for **low-power use cases**
 - Compatible with Raspberry Pi Pico & Pico W
-
----
 
 ## 📖 Documentation
 
@@ -33,16 +30,7 @@ This includes:
 
 ## 🛠️ Quickstart
 
-```bash
-# Clone the repository
- git clone https://github.com/PauWol/PicoCore.git
- cd PicoCore
-
-# Install dependencies (Python 3.x required)
-pip install -r requirements.txt
-```
-
-Then follow the [Getting Started guide](https://pauwol.github.io/PicoCore/getting-started/) to flash your Pico and install the runtime.
+Follow the [Getting Started guide](https://pauwol.github.io/PicoCore/getting-started/) to flash your Pico and install the runtime.
 
 ---
 
@@ -60,7 +48,7 @@ Contributions are welcome! Feel free to open an issue or submit a pull request i
 - Have a feature request ✨
 - Want to improve documentation 📚
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+See [CONTRIBUTING](https://pauwol.github.io/PicoCore/contributing/) for guidelines.
 
 ---
 

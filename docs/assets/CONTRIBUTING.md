@@ -1,7 +1,6 @@
 # Contributing to PicoCore
 
-Thank you for considering contributing to **PicoCore**!&nbsp; :partying_face:
-
+Thank you for considering contributing to **PicoCore**! 🎉
 We welcome contributions of all kinds — bug fixes, features, documentation, or even just sharing feedback.
 
 ---
@@ -47,8 +46,7 @@ git push origin feature/my-new-feature
 
 ## Code Style Guidelines
 
-- Use [**PEP8**](https://peps.python.org/pep-0008/) for Python code.
-- Keep the [**Rules for Developing Safety-Critical Code**](https://en.wikipedia.org/wiki/The_Power_of_10:_Rules_for_Developing_Safety-Critical_Code) in mind.
+- Use **PEP8** for Python code.
 - Keep functions and classes small and focused.
 - Add docstrings and comments where needed.
 
@@ -78,16 +76,6 @@ pip install mkdocs-material
 mkdocs serve
 ```
 
----
-
-## Download This Guide
-
-You can download this contributing guide as a Markdown file here:
-
-[Download Contributing Guide](./assets/CONTRIBUTING.md)
-
----
-
 ## License
 
-By contributing, you agree that your contributions will be licensed under the same license as this project (see [LICENSE](./assets/LICENSE)).
+By contributing, you agree that your contributions will be licensed under the same license as this project (see [LICENSE](../LICENSE)).

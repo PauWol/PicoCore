@@ -1,8 +1,8 @@
 site_name: PicoCore Documentation
 repo_url: https://github.com/PauWol/PicoCore
 theme:
-  favicon: images/pc.ico
-  logo: images/pc.png
+  favicon: assets/images/pc.ico
+  logo: assets/images/pc.png
   features:
     - navigation.footer
   name: material

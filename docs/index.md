@@ -1,6 +1,7 @@
 # PicoCore — Documentation
 
 > **PicoCore** — a lightweight, power-efficient MicroPython framework for Raspberry Pi Pico and Pico W.
+>
 > Designed for small autonomous robots, weather stations, and edge devices — simple to use, modular, and efficient.
 
 ---
