@@ -6,6 +6,12 @@
 
 ---
 
+!!! warning "This is a work in progress. Please don't use this documentation as-is yet."
+
+    Some parts of the documentation and concepts are ai written mockups and need to be updated.
+    Still there are many good ideas and concepts that need to be fleshed out.
+    Be patient and check back soon!
+
 ## About & History
 
 Before diving into PicoCore V2, it's useful to understand the project's history and why V2 exists. The original **PicoCore V1** is preserved as a **legacy release** due to major architectural flaws. Lessons learned from V1 inspired the design of V2, improving power efficiency, modularity, and maintainability.
@@ -82,8 +88,9 @@ scripts\compile.bat
 
 ## Versioning & Legacy Notes
 
-> ⚠️ **Legacy — PicoCore V1**
-> PicoCore V1 is preserved for historical and reference purposes only. It contained architectural issues that led to the V2 rewrite. Do **not** use it in new projects. See the releases page for `v1.*-legacy` archives and migration notes.
+!!! warning "Legacy — PicoCore V1"
+
+    PicoCore V1 is preserved for historical and reference purposes only. It contained architectural issues that led to the V2 rewrite. Do **not** use it in new projects. See the releases page for `v1.*-legacy` archives and migration notes.
 
 Recommended `.version` content (single-line):
 
@@ -96,13 +103,15 @@ Recommended `.version` content (single-line):
 ## Architecture Overview
 
 ```mermaid
-flowchart LR
-  A[boot.py] --> B(core.init())
-  B --> C[Service Manager]
-  C --> D[Sensor Drivers]
-  C --> E[Telemetry / Logging]
-  C --> F[Network (Pico W)]
-  C --> G[Application Services (Weather / Rover)]
+graph LR
+  boot["boot.py"] -->|calls| coreInit["core.init()"]
+  coreInit -->|initializes| svcMgr["Service Manager"]
+  svcMgr -->|manages| sensors["Sensor Drivers"]
+  svcMgr -->|logs to| telemetry["Telemetry / Logging"]
+  svcMgr -->|handles| net["Network (Pico W)"]
+  svcMgr -->|starts| apps["Application Services (Weather / Rover)"]
+  apps --> weather["Weather Service"]
+  apps --> rover["Rover Service"]
 ```
 
 - `boot.py` calls a small initialization method from `/core/`.

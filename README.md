@@ -1,7 +1,7 @@
-<p align="center">
-  <img src="./docs/assets/images/pc.png" alt="Description of image" width="45" height="45">
-  <span style="font-size: 4em; font-weight: bold; margin-left: 10px;">PicoCore</span>
-</p>
+<div align="center">
+  <img src="./docs/assets/images/pc.png" alt="Description of image" width="45" height="45" style="display: inline-block; vertical-align: middle; margin-right: 10px;">
+  <h1 style="display: inline-block; vertical-align: middle;">PicoCore</h1>
+</div>
 
 PicoCore is a lightweight **MicroPython-based runtime and API** for the Raspberry Pi Pico and Pico W. It provides a modular foundation to build embedded projects like weather stations, rovers, or automation devices with ease and efficiency.
 

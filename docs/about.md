@@ -1,6 +1,9 @@
 # About PicoCore
 
-> The story behind PicoCore: evolution, lessons learned, and the drive to make something that actually works.
+!!! abstract
+
+        The story behind PicoCore: evolution, lessons learned,
+        and the drive to make something that actually works.
 
 ---
 

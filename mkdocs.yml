@@ -72,6 +72,7 @@ nav:
       - V2: api/v2.md
   - Concepts:
       - Services: concepts/services.md
+      - P10: concepts/P10.md
       - Tasks: concepts/tasks.md
       - Events: concepts/events.md
       - Timers: concepts/timers.md
