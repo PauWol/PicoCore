@@ -1,5 +1,5 @@
-site_name: My MkDocs Material Documentation
-site_url: https://sitename.example
+site_name: PicoCore Documentation
+repo_url: https://github.com/PauWol/PicoCore
 theme:
   features:
     - navigation.footer
