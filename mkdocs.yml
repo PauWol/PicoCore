@@ -1,6 +1,8 @@
 site_name: PicoCore Documentation
 repo_url: https://github.com/PauWol/PicoCore
 theme:
+  favicon: images/pc.ico
+  logo: images/pc.png
   features:
     - navigation.footer
   name: material
@@ -45,9 +47,37 @@ markdown_extensions:
       alternate_style: true
   - admonition
   - pymdownx.details
+  - md_in_html
+  - pymdownx.blocks.caption
 
 extra:
   social:
     - icon: simple/github
       link: https://github.com/PauWol
-copyright: Copyright &copy; 2024 Paul Wolf
+copyright: Copyright &copy; 2025 Paul Wolf
+
+nav:
+  - Home: index.md
+  - About: about.md
+  - Getting Started: setup.md
+  - Supported Hardware: hardware.md
+  - Configuration:
+      - Overview: conf/overview.md
+      - PicoCore V2:
+          - config.toml: conf/v2/config.toml.md
+      - Legacy V1: conf/v1-legacy/config.toml.md
+  - Usage & API:
+      - Overview: api/overview.md
+      - V1 Legacy: api/v1-legacy.md
+      - V2: api/v2.md
+  - Concepts:
+      - Services: concepts/services.md
+      - Tasks: concepts/tasks.md
+      - Events: concepts/events.md
+      - Timers: concepts/timers.md
+      - Power Management: concepts/power.md
+  - Examples:
+      - Weather Station: examples/weather_station.md
+      - Rover: examples/rover.md
+  - Troubleshooting: troubleshooting.md
+  - Contributing: contributing.md
