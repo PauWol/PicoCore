@@ -49,6 +49,16 @@ markdown_extensions:
   - pymdownx.details
   - md_in_html
   - pymdownx.blocks.caption
+  - pymdownx.critic
+  - pymdownx.caret
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.tilde
+
+
+extra_css:
+  - stylesheets/extra.css
+
 
 extra:
   social:

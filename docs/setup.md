@@ -15,37 +15,39 @@ This guide helps you set up PicoCore from scratch, flash your board, and run you
   - `README.md` or `instructions.txt`
   - precompiled `.mpy` libraries (the PicoCore API/runtime)
   - a matching MicroPython `.uf2` firmware file _(sometimes)_
+  - some sort of **_hello world_** project in form of a `boot.py` and `main.py`
 
 ### 2. Flash MicroPython firmware
 
-!!! info "Tip: BOOTSEL mode"
-To enter bootloader mode, hold **BOOTSEL** on your Pico/Pico W and plug it into your PC.
+!!! tip "Tip: BOOTSEL mode"
+
+To enter bootloader mode, hold {==BOOTSEL==} on your Pico/Pico W and plug it into your PC.
 
 1. Your board will mount as a **RPI-RP2** drive.
 2. Copy the `.uf2` firmware file onto it.
-3. If no `.uf2` is included in the release, check the version in the `README` and download from [micropython.org](https://micropython.org/download/rp2-pico/).
+3. If no `.uf2` is included in the release, check the version in the `.version` file *(highlited line)* inside the `core` folder and download from [micropython.org](https://micropython.org/download/rp2-pico/).
+```py title=".version" hl_lines="2"
+2.0.0
+1.26.1
+```
 4. The board will reboot automatically.
 
 ### 3. Copy PicoCore runtime
 
 === "Thonny"
-
     1.  Open Thonny → File → Upload to /.
     2.  Copy the pico_core/ folder and any config.toml, boot.py, or main.py files.
 
 === "mpremote"
-
-    bash
+    ```bash
     mpremote connect list
     mpremote connect <your-port> cp -r pico_core
     mpremote connect <your-port> cp config.toml boot.py main.py
-
+    ```
 === "Helper Script"
+    
+    !!! warning "Disclaimer: No helper script there yet."
 
-    - Use the provided Python helper script in the scripts folder.
-    - It will automatically copy all required files to your Pico.ore/tree/main/scripts folder.
-
-- It will automatically copy all required files to your Pico.
 
 ### 4. Verify installation
 

@@ -14,7 +14,7 @@ We welcome contributions of all kinds — bug fixes, features, documentation, or
 - Clone your fork locally:
 
 ```bash
-git clone https://github.com/<your-username>/PicoCore.git
+git clone https://github.com/PauWol/PicoCore.git
 cd PicoCore
 ```
 
