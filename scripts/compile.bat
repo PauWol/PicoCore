@@ -17,8 +17,8 @@ REM Python builder script (relative to this .bat)
 set "PYTHON_SCRIPT=%SCRIPT_DIR%\to-mpy.py"
 
 REM Source and build directories (adjust if needed)
-set "SRC_DIR=C:\Users\paul2\Documents\Programieren\Raspberry-Pi\Pico\PicoCore V2\src\core"
-set "BUILD_DIR=C:\Users\paul2\Documents\Programieren\Raspberry-Pi\Pico\PicoCore V2\build\core"
+set "SRC_DIR=../src/core"
+set "BUILD_DIR=../build/core"
 
 REM Version filenames
 set "SRC_VER_FILE=%SRC_DIR%\.version"

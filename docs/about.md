@@ -15,7 +15,7 @@ The original **PicoCore V1** was an experimental MicroPython framework for Raspb
 
 - **Legacy Only:** The V1 codebase is preserved only as a **legacy release**. It is no longer maintained due to major design flaws.
 - **Limited Use:** While some concepts and code were useful, the architecture failed to deliver low power consumption in practice.
-- **Practical Testing:** I once built a quick prototype weather station using scrap parts and a DHT11 sensor. Despite my calculations predicting at least 2 days of battery life, it barely lasted \~5 hours. Apparently, that tiny blinking indicator LED I mounted outside was a battery vampire.
+- **Practical Testing:** I once built a quick prototype weather station using scrap parts and a DHT11 sensor. Despite my calculations predicting at least 2 days of battery life, it barely lasted ~5 hours. Apparently, that tiny blinking indicator LED I mounted outside was a battery vampire.
 - **Lessons Learned:** V1 highlighted poor service management, inefficient sensor polling, and general inefficiency. Coding felt awkward and more complicated than standard MicroPython, and my so-called PicoOS turned out to be more of a misnomer.
 
 You can find V1 in the [releases](https://github.com/PauWol/PicoCore/releases/tag/v1.0.0-legacy) as a reference, but **do not use it for new projects**.
@@ -30,7 +30,7 @@ So, I pivoted: I switched to `.mpy`-converted library-like files, making the “
 
 One weekend — fueled by coffee and little sleep — I rewrote the whole PicoCore “OS” from scratch. By the end, tests on my lab setup (my dorm PC) were working perfectly. I grabbed a bunch of scrap materials and spent the rest of the weekend building a makeshift weather station:
 
-- **Hardware:** Protein box enclosure, homemade PCB, improvised power supply from 4 Amazon batteries wired in series/parallel (\~3.3–3.7 V, \~4 Ah).
+- **Hardware:** Protein box enclosure, homemade PCB, improvised power supply from 4 Amazon batteries wired in series/parallel (~3.3–3.7 V, ~4 Ah).
 - **Design:** DHT11 sensor in a modified pillbox with ventilation holes, cable routed into the body, indicator LED to blink every minute for 3 seconds.
 - **Goal:** Measure temperature and humidity every 5 minutes overnight.
 
