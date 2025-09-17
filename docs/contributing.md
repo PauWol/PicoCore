@@ -48,7 +48,7 @@ git push origin feature/my-new-feature
 ## Code Style Guidelines
 
 - Use [**PEP8**](https://peps.python.org/pep-0008/) for Python code.
-- Keep the [**Rules for Developing Safety-Critical Code**](https://en.wikipedia.org/wiki/The_Power_of_10:_Rules_for_Developing_Safety-Critical_Code) in mind.
+- Keep the [**Rules for Developing Safety-Critical Code**](./concepts/P10.md) in mind.
 - Keep functions and classes small and focused.
 - Add docstrings and comments where needed.
 

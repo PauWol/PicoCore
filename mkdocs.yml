@@ -5,6 +5,8 @@ theme:
   logo: assets/images/pc.png
   features:
     - navigation.footer
+    - content.code.copy
+    - content.code.annotate
   name: material
   font:
     text: Merriweather Sans
@@ -55,10 +57,8 @@ markdown_extensions:
   - pymdownx.mark
   - pymdownx.tilde
 
-
 extra_css:
   - stylesheets/extra.css
-
 
 extra:
   social:

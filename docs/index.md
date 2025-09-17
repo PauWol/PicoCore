@@ -14,7 +14,9 @@
 
 ## About & History
 
-Before diving into PicoCore V2, it's useful to understand the project's history and why V2 exists. The original **PicoCore V1** is preserved as a **legacy release** due to major architectural flaws. Lessons learned from V1 inspired the design of V2, improving power efficiency, modularity, and maintainability.
+Before diving into PicoCore V2, it's useful to understand the project's history and why V2 exists.
+The original {==**PicoCore V1**==} is preserved as a {==**legacy release**==} due to major architectural flaws.
+Lessons learned from V1 inspired the design of V2, improving power efficiency, modularity, and maintainability.
 
 [Read the full story →](about.md)
 
@@ -32,6 +34,8 @@ PicoCore V2 is a MicroPython-first runtime and set of libraries that:
 ---
 
 ## Quickstart (5 minutes)
+
+!!! info "A more comprehensive setup guide can be found [here](setup.md)"
 
 ### 1. Download PicoCore release
 

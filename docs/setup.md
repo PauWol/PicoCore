@@ -4,7 +4,7 @@ This guide helps you set up PicoCore from scratch, flash your board, and run you
 
 ---
 
-## Quickstart (5 minutes)
+## Installation & Setup
 
 ### 1. Download PicoCore release
 
@@ -25,33 +25,93 @@ To enter bootloader mode, hold {==BOOTSEL==} on your Pico/Pico W and plug it int
 
 1. Your board will mount as a **RPI-RP2** drive.
 2. Copy the `.uf2` firmware file onto it.
-3. If no `.uf2` is included in the release, check the version in the `.version` file *(highlited line)* inside the `core` folder and download from [micropython.org](https://micropython.org/download/rp2-pico/).
-```py title=".version" hl_lines="2"
-2.0.0
-1.26.1
-```
-4. The board will reboot automatically.
+      - If no `.uf2` is included in the release, check the version in the `.version` file _(highlited line)_ inside the `core` folder and download from [micropython.org](https://micropython.org/download/rp2-pico/).
+
+        ```{ .version .no-copy title=".version" hl_lines="2"}
+        2.0.0
+        1.26.1
+        ```
+
+1. The board will reboot automatically and unmount.
 
 ### 3. Copy PicoCore runtime
 
 === "Thonny"
-    1.  Open Thonny → File → Upload to /.
-    2.  Copy the pico_core/ folder and any config.toml, boot.py, or main.py files.
+
+      1. **Open Thonny**
+
+        !!! note "If not installed go get it on [thonny.org](https://thonny.org/)"
+
+        <figure markdown="span">
+          ![Thonny editor window](./assets/images/thonny-editor.png)
+          <figcaption> It should look something like this</figcaption>
+        </figure>
+
+      2. **Select Interpreter**
+
+        - In the bottom right corner of the Thonny window, you will see the interpreter used to run the code you write in Thonny.
+
+        - By default, Thonny uses the interpreter on the ‘Local’ computer (the one running Thonny).
+
+        <figure markdown="span">
+          ![Thonny interpreter](./assets/images/thonny-status-bar-interpreter.png)
+          <figcaption> Click the Python interpreter and select MicroPython.</figcaption>
+        </figure>
+
+        ??? question "Check if it worked"
+
+            - Make sure that your Raspberry Pi Pico is connected to your computer and you have selected the MicroPython (Raspberry Pi Pico) interpreter.
+            - Look at the Shell panel at the bottom of the Thonny editor.
+
+            <figure markdown="span">
+              ![Thonny shell](./assets/images/repl-connected.png)
+              <figcaption> You should see something like this.</figcaption>
+            </figure>
+      
+      3. **Enable File View**
+
+        <figure markdown="span">
+          ![Thonny view](./assets/images/thonny-view-menu.png)
+          <figcaption>Click {==View==} in the top left corner and then {==Files==} in the dropdown list</figcaption>
+        </figure>
+
+      4. **Copy a folder to the device**
+
+        <figure markdown="span">
+          ![Thonny upload](./assets/images/thonny-upload-to-pico.png)
+          <figcaption>Right-click {==core==} and select {==Upload to /==}</figcaption>
+        </figure>
+
 
 === "mpremote"
-    ```bash
-    mpremote connect list
-    mpremote connect <your-port> cp -r pico_core
-    mpremote connect <your-port> cp config.toml boot.py main.py
-    ```
-=== "Helper Script"
-    
-    !!! warning "Disclaimer: No helper script there yet."
 
+    1. **Install mpremote**
+        ```bash 
+        pip install mpremote
+        ```
+    
+    2. **Check available ports**
+        ```bash
+        python -m mpremote connect list
+        ```
+
+    3. **Copy a folder to the device**
+   
+        !!! note  "`<your-port>` could be `COM13` and `<your-folder>` is usually `./core`.The `:` represents the root destination folder."
+       
+        ```{.py .annotate }
+        python -m mpremote connect <your-port> cp -r <your-folder> : #(1)!
+        ```
+
+        1. More usage Info can be found on [pypi.org](https://pypi.org/project/mpremote/)
+
+=== "Helper Script"
+
+    !!! warning "Disclaimer: No helper script there yet."
 
 ### 4. Verify installation
 
-Open a REPL and test:
+Open a [REPL](https://en.wikipedia.org/wiki/Read%E2%80%93eval%E2%80%93print_loop) and test:
 
 ```python
 import core
@@ -114,6 +174,7 @@ Different PicoCore releases may ship with slightly different `config.toml` defau
 - [Thonny IDE](https://thonny.org/)
 - [mpremote tool](https://docs.micropython.org/en/latest/reference/mpremote.html)
 - [Raspberry Pi Pico Datasheet](https://datasheets.raspberrypi.com/pico/pico-datasheet.pdf)
+- [Getting Started Guide](https://projects.raspberrypi.org/en/projects/getting-started-with-the-pico)
 
 ---
 
