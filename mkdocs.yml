@@ -87,6 +87,7 @@ nav:
       - Events: concepts/events.md
       - Timers: concepts/timers.md
       - Power Management: concepts/power.md
+      - Versioning: concepts/versioning.md
   - Examples:
       - Weather Station: examples/weather_station.md
       - Rover: examples/rover.md

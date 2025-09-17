@@ -52,6 +52,8 @@ git push origin feature/my-new-feature
 - Keep functions and classes small and focused.
 - Add docstrings and comments where needed.
 
+[Versioning of PicoCore →](./concepts/versioning.md)
+
 ---
 
 ## Reporting Issues

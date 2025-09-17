@@ -96,11 +96,7 @@ scripts\compile.bat
 
     PicoCore V1 is preserved for historical and reference purposes only. It contained architectural issues that led to the V2 rewrite. Do **not** use it in new projects. See the releases page for `v1.*-legacy` archives and migration notes.
 
-Recommended `.version` content (single-line):
-
-```
-2.0.0
-```
+[Continue: Read about Versioning (Contributor) →](./concepts/versioning.md)
 
 ---
 
