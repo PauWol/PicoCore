@@ -7,6 +7,6 @@ init()
 
 
 
-service_manager.register("LED",1,led.LED,2,"custom",3,60)
+service_manager.register("LED", 1, led.LED, 2, "custom", 3, 60)
 
 service_manager.startAll()

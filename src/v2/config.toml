@@ -1,0 +1,14 @@
+
+[power]
+
+[power.monitoring]
+enabled = true
+battery_voltage = 3.3  # Volts
+battery_ah = 1.0  # Ampere-hours
+low_battery_warning = 3.0  # Volts
+adc_pin = 28 # ADC Pin to measure battery voltage
+
+[power.voltage_divider]
+enabled = true
+R1 = 100000 # Resistance of R1 in Ohms
+R2 = 100000 # Resistance of R2 in Ohms

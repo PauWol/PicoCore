@@ -27,7 +27,7 @@ def init():
     # ------------------------------------
 
     # Priority: 3
-    service_manager.register("HEALTH", 3, health.SystemHealth, get_config().get("system.health.check_interval"),get_config().get("system.health.hardware_cooling"))
+    service_manager.register("HEALTH", 3, health.SystemHealth, get_config().get("system.health.check_interval"), get_config().get("system.health.hardware_cooling"))
 
     # Priority: 2
 

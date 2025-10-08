@@ -2,3 +2,6 @@
 /build/venv
 test.py~
 test.toml~
+src/v2/core/__pycache__/__init__.cpython-311.pyc
+*.xml
+*.iml

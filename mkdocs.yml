@@ -83,6 +83,7 @@ nav:
   - Concepts:
       - Services: concepts/services.md
       - P10: concepts/P10.md
+      - Naming Conventions: concepts/naming.md
       - Tasks: concepts/tasks.md
       - Events: concepts/events.md
       - Timers: concepts/timers.md
