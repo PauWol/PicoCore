@@ -74,12 +74,12 @@ nav:
   - Configuration:
       - Overview: conf/overview.md
       - PicoCore V2:
-          - config.toml: conf/v2/config.toml.md
-      - Legacy V1: conf/v1-legacy/config.toml.md
+          - config.toml: conf/V2/config.toml.md
+      - Legacy V1: conf/V1-legacy/config.toml.md
   - Usage & API:
       - Overview: api/overview.md
-      - V1 Legacy: conf/V1-legacy/conf.toml.md
-      - V2: conf/V2/config.toml.md
+      - V1 Legacy: api/v1-legacy.md
+      - V2: api/v2.md
   - Concepts:
       - Services: concepts/services.md
       - P10: concepts/P10.md
