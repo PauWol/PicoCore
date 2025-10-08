@@ -1,31 +1,21 @@
-# core/logger2.py
-try:
-    from micropython import const
-except Exception:
-    # const is optional on CPython; behave like identity
-    def const(x): return x
+from micropython import const
+import uasyncio as asyncio
+import os
+import time
 
 # Levels as small ints (cheap comparisons)
-PM_OFF         = const(0)
-PM_FATAL       = const(1)
-PM_ERROR       = const(2)
-PM_WARN        = const(3)
-PM_INFO        = const(4)
-PM_DEBUG       = const(5)
+PM_OFF = const(0)
+PM_FATAL = const(1)
+PM_ERROR = const(2)
+PM_WARN = const(3)
+PM_INFO = const(4)
+PM_DEBUG = const(5)
 # Map names (optional)
 LEVEL_NAMES = {
     PM_FATAL: "FATAL", PM_ERROR: "ERROR", PM_WARN: "WARN",
     PM_INFO: "INFO", PM_DEBUG: "DEBUG", PM_OFF: "OFF"
 }
 
-# Try to import uasyncio (MicroPython). If not present, background flush won't auto-run.
-try:
-    import uasyncio as asyncio
-except Exception:
-    asyncio = None
-
-import os
-import time
 
 class Logger:
     """
@@ -60,7 +50,7 @@ class Logger:
         self.max_rotations = int(max_rotations)
 
         # runtime
-        self._log_buf = []   # list of bytes or strings to write to log file
+        self._log_buf = []  # list of bytes or strings to write to log file
         self._data_buf = []
         self._running = False
         self._flusher_task = None
@@ -195,15 +185,15 @@ class Logger:
             # rotate: path -> path.0, path.0 -> path.1 ... up to max_rotations-1
             try:
                 # remove oldest if needed
-                last = f"{path}.{self.max_rotations-1}"
+                last = f"{path}.{self.max_rotations - 1}"
                 if os.path.exists(last):
                     try:
                         os.remove(last)
                     except Exception:
                         pass
-                for i in range(self.max_rotations-2, -1, -1):
+                for i in range(self.max_rotations - 2, -1, -1):
                     src = f"{path}.{i}" if i > 0 else path
-                    dst = f"{path}.{i+1}"
+                    dst = f"{path}.{i + 1}"
                     if os.path.exists(src):
                         try:
                             os.rename(src, dst)
@@ -324,18 +314,20 @@ class Logger:
             "console": self.console
         }
 
+
 _logger_instance: Logger | None = None
 
+
 def init_logger(
-    level=PM_INFO,
-    buffer_size=16,
-    max_file_size_kb=64,
-    file_path="logs.txt",
-    data_path="data.txt",
-    console=True,
-    file_log=True,
-    flush_interval=5,
-    max_rotations=3,
+        level=PM_INFO,
+        buffer_size=16,
+        max_file_size_kb=64,
+        file_path="logs.txt",
+        data_path="data.txt",
+        console=True,
+        file_log=True,
+        flush_interval=5,
+        max_rotations=3,
 ) -> Logger:
     """
     Initialize the global logger singleton and start background flush.
@@ -357,8 +349,9 @@ def init_logger(
         _logger_instance.start()  # start background flusher if uasyncio is available
     return _logger_instance
 
-def get_logger() -> Logger:
-    """Return the global Logger instance (must call init_logger first)."""
+
+def logger() -> Logger:
+    """Return the global Logger instance (must call init_logger first."""
     if _logger_instance is None:
         raise RuntimeError("Logger not initialized. Call init_logger() first.")
     return _logger_instance

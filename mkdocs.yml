@@ -78,8 +78,8 @@ nav:
       - Legacy V1: conf/v1-legacy/config.toml.md
   - Usage & API:
       - Overview: api/overview.md
-      - V1 Legacy: api/v1-legacy.md
-      - V2: api/v2.md
+      - V1 Legacy: conf/V1-legacy/conf.toml.md
+      - V2: conf/V2/config.toml.md
   - Concepts:
       - Services: concepts/services.md
       - P10: concepts/P10.md

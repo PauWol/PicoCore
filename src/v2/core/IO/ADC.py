@@ -8,4 +8,14 @@ class ADC:
     def raw(self):
         pass
 
-    def 
+    def voltage(self):
+        pass
+
+    def real(self):
+        pass
+
+    def mean(self):
+        pass
+
+    def samples(self,n:int):
+        pass
