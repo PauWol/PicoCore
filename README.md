@@ -30,7 +30,7 @@ This includes:
 
 ## 🛠️ Quickstart
 
-Follow the [Getting Started guide](https://pauwol.github.io/PicoCore/getting-started/) to flash your Pico and install the runtime.
+Follow the [Getting Started guide](https://pauwol.github.io/PicoCore/setup) to flash your Pico and install the runtime.
 
 ---
 
