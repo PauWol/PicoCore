@@ -1,5 +1,9 @@
 from . import config
-from .root import Root
+from . import Root
+from . import IO
+from . import Logging
+from . import constants
+
 
 __all__ = ['version', 'uuid']
 
@@ -98,11 +102,20 @@ def init():
     Initialize PicoCore.All boot time configuration is executed here.
     :return:
     """
-    from config import get_config
 
     # Read config and initiate root with it TODO: Implement actual init
-    get_config("config.toml")
+    config.get_config("config.toml")
+    import time
+    from machine import Pin
+    led = IO.Led("LED",Pin.OUT)
+
+    for _ in range(3):
+        led.toggle()
+        time.sleep(0.2)
+        led.toggle()
+        time.sleep(0.2)
 
 
+    led.off()
 
 
