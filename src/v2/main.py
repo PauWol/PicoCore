@@ -1,4 +1,4 @@
-from core.root import Root
+from core.Root.Root import Root
 
-root=Root()
-root.init()
+root = Root()
+root.run()

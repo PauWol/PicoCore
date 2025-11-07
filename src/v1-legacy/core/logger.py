@@ -94,7 +94,7 @@ class Log:
             # rotate if the file is too large
             if get_file_size(name) > self.MAX_FILE_SIZE:
                 rotate_file(name, max_rotations)
-                # create a fresh main file to continue logging
+                # create a fresh main file to continue loging
                 create_bin_file(name)
 
         except OSError as e:

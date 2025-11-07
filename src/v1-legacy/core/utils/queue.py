@@ -1,6 +1,6 @@
 # core/utils/queue.py
 # MicroPython-friendly ByteQueue + QueueManager
-# Avoids typing & logging modules so it works on boot
+# Avoids typing & loging modules so it works on boot
 
 # NOTE: flush_cb will be called with a bytes object when the queue is flushed.
 # Keep flush_cb small and fast (no heavy I/O inside if possible).

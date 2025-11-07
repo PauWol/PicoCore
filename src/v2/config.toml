@@ -1,14 +1,39 @@
+[system]
+name = "PicoCore V2"
+version = "1.0.0"
+rtc_sync_stamp = 1757878508
+
+[system.logger]
+level = "INFO"
+buffersize = 5
+max = 600
+log_to_console = true
+log_to_file = true
+
+[system.health]
+onboard_status_led = false
+check_interval = 5000
+hardwear_cooling = false
+hardwear_warming = false
+
+[system.runtime]
+interval = 1_000 # in ms
+min_battery_low_auto_extend_runtime = 30 # in min
 
 [power]
 
 [power.monitoring]
 enabled = true
-battery_voltage = 3.3  # Volts
-battery_ah = 1.0  # Ampere-hours
-low_battery_warning = 3.0  # Volts
+
+[power.battery]
+battery_voltage_max = 5.5  # Volts
+battery_voltage_nominal = 5  # Volts
+battery_voltage_cut_off = 3.3  # Volts
+battery_ah = 2.4  # Ampere-hours
 adc_pin = 28 # ADC Pin to measure battery voltage
 
 [power.voltage_divider]
 enabled = true
-R1 = 100000 # Resistance of R1 in Ohms
-R2 = 100000 # Resistance of R2 in Ohms
+r1 = 10_000 # Resistance of R1 in Ohms
+r2 = 5_100 # Resistance of R2 in Ohms
+

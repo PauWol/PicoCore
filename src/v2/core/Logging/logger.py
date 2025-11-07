@@ -71,7 +71,7 @@ class Logger:
             try:
                 open(path, "wb").close()
             except Exception:
-                # can't create file: disable file logging
+                # can't create file: disable file loging
                 self.file_log = False
 
     def _timestamp(self):
@@ -140,7 +140,7 @@ class Logger:
             # check rotation
             self._rotate_if_needed(self.file_path)
         except OSError as e:
-            # On error, disable file logging to avoid busy failures
+            # On error, disable file loging to avoid busy failures
             self.file_log = False
             if self.console:
                 print("[LOGGER] flush_logs OSError:", e)
@@ -206,7 +206,7 @@ class Logger:
                 except Exception:
                     pass
             except Exception:
-                # rotation failed; keep logging appends (best effort)
+                # rotation failed; keep loging appends (best effort)
                 pass
 
     # -------------------------
@@ -293,7 +293,7 @@ class Logger:
     # -------------------------
     def mode(self, mode_name="normal"):
         """
-        Change logging mode:
+        Change loging mode:
           - 'low'  -> WARN only, no overwrites
           - 'medium' -> WARN
           - 'normal' -> restore original
