@@ -31,7 +31,7 @@ LOG_LEVELS = {
 LOG_LEVELS_REV = {v: k for k, v in LOG_LEVELS.items()}
 
 
-# Logging Constants
+# logging Constants
 
 UNKNOWN = "UNKNOWN"
 SERVICE_INIT = "SERVICE INIT"
@@ -47,7 +47,7 @@ RAM = "RAM"
 FLASH_MEM = "FLASH MEMORY"
 OVERFLOW = "OVERFLOW"
 
-# Logging table with general domain names
+# logging table with general domain names
 
 LOGGING_TABLE = {
     UNKNOWN : 0,

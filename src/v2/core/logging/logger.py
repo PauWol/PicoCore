@@ -355,3 +355,5 @@ def logger() -> Logger:
     if _logger_instance is None:
         raise RuntimeError("Logger not initialized. Call init_logger() first.")
     return _logger_instance
+
+#TODO: Review the flaws of this module

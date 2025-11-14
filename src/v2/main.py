@@ -1,4 +1,3 @@
-from core.Root.Root import Root
+from core.root.Root import root
 
-root = Root()
-root.run()
+root().run()

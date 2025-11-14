@@ -1,7 +1,7 @@
 from . import config
-from . import Root
-from . import IO
-from . import Logging
+from .root import root , start , task , on , bus , emit , manual , off
+from . import io
+from . import logging
 from . import constants
 
 
@@ -100,14 +100,26 @@ def uptime(ms: bool = False, formatted: bool = False) -> int | str:
 def init():
     """
     Initialize PicoCore.All boot time configuration is executed here.
+    Needs to be called at the very start of the boot.py file to use benefits of PicoCore.
     :return:
     """
 
     # Read config and initiate root with it TODO: Implement actual init
-    config.get_config("config.toml")
+
+    # Get/Initiate config
+    conf = config.get_config("config.toml")
+
+    # Initiate logging
+    logging.init_logger() # TODO: Parse config args
+
+    # Initiate root
+    root()
+
+    # TODO: Use actual internal hardware indicator lib
     import time
     from machine import Pin
-    led = IO.Led("LED",Pin.OUT)
+
+    led = io.Led("LED", Pin.OUT)
 
     for _ in range(3):
         led.toggle()

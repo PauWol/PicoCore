@@ -1,6 +1,7 @@
 from machine import ADC as HWADC, Pin
 from uasyncio import sleep as async_sleep
 from time import sleep
+import math
 
 from .Util import stats_from_samples
 
@@ -111,7 +112,7 @@ class ADC:
         :param delay: Delay between samples in seconds
         :return average of the gathered samples in set type
         """
-        readings = await self.async_samples(n, delay)
+        readings = await self.async_samples(n, type, delay)
         avg_raw = sum(readings) / len(readings)
         return avg_raw
 

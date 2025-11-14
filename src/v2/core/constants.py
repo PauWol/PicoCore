@@ -32,9 +32,17 @@ POWER_VOLTAGE_DIVIDER_R2 = const("power.voltage_divider.r2")
 
 
 SLEEP_INTERVAL = const("system.runtime.interval")
-# Root rules
+# root rules
 
 
 
 NORMALIZED_VOLTAGE_DIFFERENCE_V_MAX_TO_V_NOMINAL = 0.1
 NORMALIZED_VOLTAGE_MARGIN_V_CUT_OFF_TO_V_NOMINAL = 0.2
+
+
+# events
+EVENT_ROOT_LOOP_TICK = const("root/loop/tick")
+
+EVENT_ROOT_LOOP_BOOT_BEFORE = const("root/loop/boot/before")
+EVENT_ROOT_LOOP_BOOT_AFTER = const("root/loop/boot/after")
+EVENT_ROOT_LOOP_BOOT = const("root/loop/boot")

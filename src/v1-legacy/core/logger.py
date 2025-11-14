@@ -24,7 +24,7 @@ class Log:
         self.init()
 
     # -----------------------------------------------------
-    # Initialize Logging Files
+    # Initialize logging Files
     # -----------------------------------------------------
 
     @staticmethod
@@ -101,7 +101,7 @@ class Log:
             print(f"LOG ERROR: Failed to flush data - {e}")
 
     # -----------------------------------------------------
-    # Public Logging Functions
+    # Public logging Functions
     # -----------------------------------------------------
 
     def debug(self, domain , msg="",origin:str=None):

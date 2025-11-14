@@ -127,7 +127,7 @@ class Config:
         s = s.replace('"', '\\"')
         return f"\"{s}\""
 
-    # ---------- file IO ----------
+    # ---------- file io ----------
     def _load(self):
         try:
             with open(self.path, "r") as f:

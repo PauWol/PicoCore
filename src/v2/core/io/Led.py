@@ -17,15 +17,11 @@ class Led:
     def state(self):
         return self.pin.value()
 
-    async def aon(self):
-        self.pin.value(1)
+    async def async_on(self):
+       await  self.pin.value(1)
 
-    async def aoff(self):
+    async def async_off(self):
         self.pin.value(0)
 
-    async def atoggle(self):
+    async def async_toggle(self):
         self.pin.value(not self.pin.value())
-
-    async def astate(self):
-        return self.pin.value()
-
