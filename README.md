@@ -26,19 +26,13 @@ This includes:
 - **API reference**
 - **Concepts & architecture**
 
----
-
 ## 🛠️ Quickstart
 
 Follow the [Getting Started guide](https://pauwol.github.io/PicoCore/setup) to flash your Pico and install the runtime.
 
----
-
 ## 📦 Releases
 
 Precompiled releases (with `.uf2` firmware and PicoCore libraries) are available on the [Releases page](https://github.com/PauWol/PicoCore/releases).
-
----
 
 ## 🤝 Contributing
 
@@ -50,21 +44,15 @@ Contributions are welcome! Feel free to open an issue or submit a pull request i
 
 See [CONTRIBUTING](https://pauwol.github.io/PicoCore/contributing/) for guidelines.
 
----
-
 ## 📜 License
 
 This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
-
----
 
 ## 🙌 Acknowledgements
 
 - [MicroPython](https://micropython.org/) for the base runtime
 - [Raspberry Pi Foundation](https://www.raspberrypi.org/) for the Pico
 - Contributors & testers of PicoCore
-
----
 
 ### 🔗 Links
 
