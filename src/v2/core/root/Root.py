@@ -1,9 +1,12 @@
 from uasyncio import sleep as async_sleep, create_task
 from time import ticks_ms,ticks_diff
+from machine import lightsleep , deepsleep,Pin
 from ..config import get_config
 from ..constants import POWER_MONITOR_ENABLED,SLEEP_INTERVAL, EVENT_ROOT_LOOP_BOOT, EVENT_ROOT_LOOP_BOOT_BEFORE, EVENT_ROOT_LOOP_BOOT_AFTER
 from ..logging import logger
 from .Bus import emit , on
+from ..io import Led
+from ..util import boot_flag_task
 import uasyncio
 
 """
@@ -14,8 +17,6 @@ NORMAL   = 3
 LOW      = 4
 IDLE     = 5
 """
-
-
 
 class Task:
     __slots__ = ('name', 'interval', 'last_run', 'callback', 'async_task', 'enabled', 'priority', 'boot', 'parallel')
@@ -76,15 +77,20 @@ class Root:
     def __init__(self):
         self.conf = get_config()
         self.running = True
+        # Interval for async sleep in main loop
         self.sleep_interval = self.conf.get(SLEEP_INTERVAL) or 0.1
+        self.power_monitor = self.conf.get(POWER_MONITOR_ENABLED) or False
 
         self._boot_tasks = []
         self._tasks = []
 
+        # time for actual light- or later deepsleep
+        self._min_sleep_time = 100 # ms
         self._init_system_tasks()
 
+
     def _init_system_tasks(self):
-        pass
+        self.add(Task("boot_flag_task","1ms",callback= boot_flag_task,boot=True,priority=0,enabled=True,parallel=True))
 
     def add(self, _task:Task):
         """
@@ -108,6 +114,12 @@ class Root:
         """
         self._boot_tasks.sort(key=lambda x: x.priority)
         self._tasks.sort(key=lambda x: x.priority)
+
+        if self.power_monitor and self._tasks:
+            # Set sleep interval to the minimum interval of all tasks must be >= 100 ms.
+            t =  min([t.interval for t in self._tasks])
+            self._min_sleep_time = t if t > self._min_sleep_time else self._min_sleep_time
+
         logger().debug("Root",f"Root scheduler optimized","optimize")
 
     def remove(self, _task: Task | str):
@@ -131,6 +143,21 @@ class Root:
 
         logger().debug("Root",f"Task {_task.name} removed from root scheduler", "remove")
 
+    async def sleep(self):
+        """
+        This method puts the microcontroller to sleep.
+        :return: None
+        """
+        led = Led("LED", Pin.OUT)
+        if self.power_monitor:
+            lightsleep(self._min_sleep_time)
+        # TODO: Add deepsleep support with state saving
+
+        else:
+            await led.async_toggle()
+            await async_sleep(self.sleep_interval)
+
+
     async def boot(self):
         """
         This method is called as representative of boot for root and thus run all tasks marked as boot tasks.
@@ -152,6 +179,7 @@ class Root:
         logger().debug("Root",f"Root boot completed","boot")
 
 
+
     async def loop(self):
         """
         The root main execution loop running all tasks (excluded boot marked ones)
@@ -168,7 +196,7 @@ class Root:
                         create_task(_task.run_async(now))
                     else:
                         _task.run(now)
-            await async_sleep(self.sleep_interval)
+            await self.sleep()
 
     def run(self):
         """
@@ -224,3 +252,10 @@ def start():
     :return:
     """
     root().run()
+
+def stop():
+    """
+    This stops the root scheduler.
+    :return:
+    """
+    root().running  = False

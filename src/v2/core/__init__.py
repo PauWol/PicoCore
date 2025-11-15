@@ -1,21 +1,27 @@
 from . import config
-from .root import root , start , task , on , bus , emit , manual , off
+from .root import root , start , task , on , bus , emit , manual , off, stop
 from . import io
 from . import logging
 from . import constants
 
 
-__all__ = ['version', 'uuid']
+__all__ = ['version', 'uuid','root','init','uptime','io','logging','constants','config','task','on','bus','emit','manual','off','start']
 
 
-def version() -> str:
+def version() -> tuple[str,str]:
     """
     Get the current version of PicoCore.
     
     Returns:
-        str: The version string in semantic versioning format (e.g., "2.0.0").
+        tuple[str,str]: The version string in semantic versioning format (e.g., ["2.0.0" , "1.26.1"] ).
     """
-    return "2.0.0"
+    import os
+
+    if os.stat("./.version").st_size >= 13:
+        with open("./.version", "r") as version_file:
+             return version_file.read().strip().split("\n")
+    else:
+        raise ValueError("Version file could not be read")
 
 
 def uuid(byte: bool = False) -> bytes | str:
@@ -97,23 +103,48 @@ def uptime(ms: bool = False, formatted: bool = False) -> int | str:
     return round(uptime_ms / 1000)
 
 
+# call this from boot.py (early) or from Root.boot() before starting scheduler
+def check_double_boot_and_maybe_enter_safe_mode():
+    """
+    Usage:
+      - call early during startup.
+      - Pass your Root instance so we can stop the scheduler if safe mode triggered.
+    Returns True if safe mode was entered, False otherwise.
+    """
+    from .util import _file_exists , BOOT_FLAG , remove_boot_flag , create_boot_flag
+    # if boot flag exists → double-boot detected
+    if _file_exists(BOOT_FLAG):
+        # remove flag so future boots are normal
+        remove_boot_flag()
+        # Enter safe mode now
+        stop()
+        return True
+
+    # otherwise create the flag and schedule a deferred removal
+    create_boot_flag()
+
+    # schedule deletion after BOOT_WINDOW_MS inside event loop.
+    # We cannot create uasyncio tasks safely from here if event loop not running.
+    # So return a small marker that main boot sequence / Root.boot should
+    # schedule the deletion task once uasyncio loop is running.
+
+    return False
+
+
 def init():
     """
     Initialize PicoCore.All boot time configuration is executed here.
     Needs to be called at the very start of the boot.py file to use benefits of PicoCore.
     :return:
     """
-
-    # Read config and initiate root with it TODO: Implement actual init
-
     # Get/Initiate config
-    conf = config.get_config("config.toml")
-
+    conf =config.get_config("config.toml")
     # Initiate logging
     logging.init_logger() # TODO: Parse config args
-
     # Initiate root
     root()
+    sb = check_double_boot_and_maybe_enter_safe_mode()
+
 
     # TODO: Use actual internal hardware indicator lib
     import time
@@ -127,7 +158,9 @@ def init():
         led.toggle()
         time.sleep(0.2)
 
-
     led.off()
+
+    if sb:
+        led.on()
 
 

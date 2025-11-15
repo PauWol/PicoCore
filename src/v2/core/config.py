@@ -1,7 +1,3 @@
-# config.py
-# Lightweight TOML-like config parser for MicroPython (improved)
-
-from sys import modules
 
 class Config:
     __slots__ = ("path", "file_object", "current_class", "subclasses")
@@ -39,7 +35,6 @@ class Config:
     def _is_blank(line):
         return not line
 
-    # ---------- parsing simple inline dicts (naive but predictable) ----------
     def _parse_inline_dict(self, value):
         inner = value[1:-1].strip()
         out = {}
@@ -54,7 +49,6 @@ class Config:
                 out[key] = self._convert_value(v.strip())
         return out
 
-    # ---------- value conversion ----------
     def _convert_value(self, value):
         v = value.strip()
         if not v:
@@ -107,7 +101,6 @@ class Config:
             return v[1:-1]
         return v
 
-    # ---------- convert back to file format ----------
     def _value_to_string(self, value):
         if isinstance(value, bool):
             return "true" if value else "false"
@@ -127,7 +120,6 @@ class Config:
         s = s.replace('"', '\\"')
         return f"\"{s}\""
 
-    # ---------- file io ----------
     def _load(self):
         try:
             with open(self.path, "r") as f:
@@ -159,7 +151,6 @@ class Config:
                 # print("[Warning] Unknown line:", raw_line)
                 continue
 
-    # ---------- section/property builders ----------
     def _new_class(self, line):
         class_name = line[1:-1].strip()
         if class_name not in self.file_object:
@@ -225,7 +216,6 @@ class Config:
                         f.write(f"{k} = {self._value_to_string(subs[sub_name][k])}\n")
                     f.write("\n")
 
-    # ---------- public API ----------
     def get(self, key):
         if key == "*":
             return self.file_object
@@ -255,7 +245,7 @@ class Config:
                 self.subclasses.setdefault(cls, set()).add(sub)
         self._save()
 
-# ---------- singleton accessor ----------
+
 _config_instance = None
 
 def get_config(path=None) -> Config|ValueError:
@@ -269,8 +259,3 @@ def get_config(path=None) -> Config|ValueError:
 def reset_config():
     global _config_instance
     _config_instance = None
-
-# convenience: allow simple import/run demo
-if __name__ == "__main__":
-    cfg = get_config("../config.toml")
-    print(cfg.get("system.name"))

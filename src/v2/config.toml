@@ -13,11 +13,9 @@ log_to_file = true
 [system.health]
 onboard_status_led = false
 check_interval = 5000
-hardwear_cooling = false
-hardwear_warming = false
 
 [system.runtime]
-interval = 1_000 # in ms
+interval = 0.1 # in s
 min_battery_low_auto_extend_runtime = 30 # in min
 
 [power]
@@ -31,6 +29,7 @@ battery_voltage_nominal = 5  # Volts
 battery_voltage_cut_off = 3.3  # Volts
 battery_ah = 2.4  # Ampere-hours
 adc_pin = 28 # ADC Pin to measure battery voltage
+min_runtime = 10 # in min
 
 [power.voltage_divider]
 enabled = true

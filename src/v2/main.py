@@ -1,3 +1,9 @@
-from core.root.Root import root
+from core import start,task
 
-root().run()
+
+@task("3s",False)
+def test():
+    print("test")
+
+
+start()

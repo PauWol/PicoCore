@@ -46,3 +46,7 @@ EVENT_ROOT_LOOP_TICK = const("root/loop/tick")
 EVENT_ROOT_LOOP_BOOT_BEFORE = const("root/loop/boot/before")
 EVENT_ROOT_LOOP_BOOT_AFTER = const("root/loop/boot/after")
 EVENT_ROOT_LOOP_BOOT = const("root/loop/boot")
+
+
+BOOT_FLAG = "boot_flag"      # filename stored in flash
+BOOT_WINDOW_MS = 1500        # time window to consider a second boot as "double boot"

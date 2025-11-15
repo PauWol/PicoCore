@@ -1,4 +1,4 @@
-from .Root import root, task , start
+from .Root import root, task , start, stop
 from .Bus import emit , on , off , manual , bus
 from .Power import Power
 
