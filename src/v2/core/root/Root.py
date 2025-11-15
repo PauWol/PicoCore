@@ -3,7 +3,7 @@ from time import ticks_ms,ticks_diff
 from machine import lightsleep , deepsleep,Pin
 from ..config import get_config
 from ..constants import POWER_MONITOR_ENABLED,SLEEP_INTERVAL, EVENT_ROOT_LOOP_BOOT, EVENT_ROOT_LOOP_BOOT_BEFORE, EVENT_ROOT_LOOP_BOOT_AFTER
-from ..logging import logger
+from ..logging import logger,_flusher_task
 from .Bus import emit , on
 from ..io import Led
 from ..util import boot_flag_task
@@ -50,6 +50,8 @@ class Task:
                 return int(interval[:-2])
             elif interval.endswith("s"):
                 return int(interval[:-1]) * 1000
+            elif interval.endswith("min"):
+                return int(interval[:-3]) * 1000 * 60
             elif interval.endswith("h"):
                 return int(interval[:-1]) * 1000 * 60 * 60
             else:
@@ -90,7 +92,12 @@ class Root:
 
 
     def _init_system_tasks(self):
+
+        # boot flag task
         self.add(Task("boot_flag_task","1ms",callback= boot_flag_task,boot=True,priority=0,enabled=True,parallel=True))
+
+        # logger flush task
+        #self.add(Task("logger_flush_task",self._min_sleep_time,callback= _flusher_task,async_task=False,boot=False,priority=1,enabled=True,parallel=False))
 
     def add(self, _task:Task):
         """
@@ -149,7 +156,8 @@ class Root:
         :return: None
         """
         led = Led("LED", Pin.OUT)
-        if self.power_monitor:
+        if self.power_monitor and True==False:
+            await led.async_blink(2,0.2)
             lightsleep(self._min_sleep_time)
         # TODO: Add deepsleep support with state saving
 

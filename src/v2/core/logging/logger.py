@@ -1,20 +1,7 @@
-from micropython import const
-import uasyncio as asyncio
+from ..constants import OFF , INFO , DEBUG , FATAL , ERROR , WARN , LEVEL_NAMES
+from ..util import _file_exists , uptime , create_file
 import os
-import time
 
-# Levels as small ints (cheap comparisons)
-PM_OFF = const(0)
-PM_FATAL = const(1)
-PM_ERROR = const(2)
-PM_WARN = const(3)
-PM_INFO = const(4)
-PM_DEBUG = const(5)
-# Map names (optional)
-LEVEL_NAMES = {
-    PM_FATAL: "FATAL", PM_ERROR: "ERROR", PM_WARN: "WARN",
-    PM_INFO: "INFO", PM_DEBUG: "DEBUG", PM_OFF: "OFF"
-}
 
 
 class Logger:
@@ -28,14 +15,13 @@ class Logger:
     """
 
     def __init__(self,
-                 level=PM_INFO,
-                 buffer_size=16,
+                 level=INFO,
+                 buffer_size=5,
                  max_file_size_kb=64,
                  file_path="logs.txt",
                  data_path="data.txt",
                  console=True,
                  file_log=True,
-                 flush_interval=5,
                  max_rotations=3):
         # config
         self.level = int(level)
@@ -45,50 +31,36 @@ class Logger:
         self.data_path = data_path
         self.console = bool(console)
         self.file_log = bool(file_log)
-        self.flush_interval = int(flush_interval)
         self.max_bytes = int(max_file_size_kb) * 1024
         self.max_rotations = int(max_rotations)
 
         # runtime
         self._log_buf = []  # list of bytes or strings to write to log file
         self._data_buf = []
-        self._running = False
-        self._flusher_task = None
 
-        # ensure files exist
-        self._ensure_file(self.file_path)
-        self._ensure_file(self.data_path)
+        self._file_checks()
 
     # -------------------------
     # Internal util
     # -------------------------
-    def _ensure_file(self, path):
-        try:
-            if not os.path.exists(path):
-                open(path, "wb").close()
-        except Exception:
-            # if os.path doesn't exist in some ports, attempt open directly
-            try:
-                open(path, "wb").close()
-            except Exception:
-                # can't create file: disable file loging
-                self.file_log = False
 
-    def _timestamp(self):
-        # Use integer seconds to save space; change to ms if needed
-        try:
-            return int(time.time())
-        except Exception:
-            # fallback if time unavailable
-            return 0
+    def _file_checks(self):
+        if not _file_exists(self.file_path):
+            create_file(self.file_path)
+        if not _file_exists(self.data_path):
+            create_file(self.data_path)
+
+    @staticmethod
+    def _timestamp() -> int:
+        return uptime(formatted=True)
 
     def _format_line(self, level_int, domain, origin, msg):
-        # Simple human readable line: ISO-ish timestamp | LEVEL | origin | domain | msg\n
+        # Simple human readeble line: ISO-ish timestamp | LEVEL | origin | domain | msg\n
         t = self._timestamp()
         lvl = LEVEL_NAMES.get(level_int, str(level_int))
         origin = origin if origin is not None else "<unknown>"
         # keep single string and encode once when writing to file
-        return f"{t}|{lvl}|{origin}|{domain}|{msg}\n"
+        return f"{t} | {lvl} | {origin} | {domain} |{msg} \n"
 
     # -------------------------
     # Buffer & flush logic
@@ -99,12 +71,7 @@ class Logger:
         line = self._format_line(level_int, domain, origin, msg)
         # console immediate print (non-blocking)
         if self.console:
-            # avoid format twice: console uses same formatted line
-            try:
                 print(line.rstrip("\n"))
-            except Exception:
-                # ignore console errors
-                pass
         if self.file_log:
             self._log_buf.append(line)
             # flush immediate if buffer full
@@ -113,7 +80,7 @@ class Logger:
                 self.flush_logs()
 
     def _enqueue_data(self, name, data_str):
-        line = f"{self._timestamp()}|DATA|{name}|{data_str}\n"
+        line = f"{self._timestamp()}|{name}|{data_str}\n"
         if self.file_log:
             self._data_buf.append(line)
             if len(self._data_buf) >= self.buffer_size:
@@ -186,7 +153,7 @@ class Logger:
             try:
                 # remove oldest if needed
                 last = f"{path}.{self.max_rotations - 1}"
-                if os.path.exists(last):
+                if _file_exists(last):
                     try:
                         os.remove(last)
                     except Exception:
@@ -194,7 +161,7 @@ class Logger:
                 for i in range(self.max_rotations - 2, -1, -1):
                     src = f"{path}.{i}" if i > 0 else path
                     dst = f"{path}.{i + 1}"
-                    if os.path.exists(src):
+                    if _file_exists(src):
                         try:
                             os.rename(src, dst)
                         except Exception:
@@ -210,79 +177,30 @@ class Logger:
                 pass
 
     # -------------------------
-    # Background flusher
-    # -------------------------
-    async def _async_flusher(self):
-        while self._running:
-            try:
-                self.flush()
-            except Exception:
-                # swallow to keep flusher alive
-                pass
-            await asyncio.sleep(self.flush_interval)
-
-    def start(self):
-        """
-        Start background flush:
-        - If uasyncio available, schedule flusher coroutine
-        - Otherwise user must call flush() periodically or call start_sync_flusher() manually
-        """
-        if self._running:
-            return
-        self._running = True
-        if asyncio is not None:
-            # schedule flusher task
-            loop = asyncio.get_event_loop()
-            try:
-                # create_task isn't always available; use ensure_future style
-                self._flusher_task = loop.create_task(self._async_flusher())
-            except Exception:
-                try:
-                    loop.create_task(self._async_flusher())
-                except Exception:
-                    # fallback: no ability to schedule; user must call flush manually
-                    self._flusher_task = None
-        else:
-            # no asyncio: user must call flush manually
-            self._flusher_task = None
-
-    async def stop(self):
-        """Stop background flusher and flush remaining buffers."""
-        if not self._running:
-            return
-        self._running = False
-        # give the flusher a chance to run one last time if async
-        if asyncio is not None and self._flusher_task is not None:
-            # wait a short moment so flusher can flush
-            await asyncio.sleep(0)
-        # final flush
-        self.flush()
-
-    # -------------------------
     # Public log API
     # -------------------------
     def _should_log(self, level_int):
         return level_int <= self.level
 
     def debug(self, domain, msg="", origin=None):
-        if self._should_log(PM_DEBUG):
-            self._enqueue_log(PM_DEBUG, domain, msg, origin)
+        if self._should_log(DEBUG):
+            self._enqueue_log(DEBUG, domain, msg, origin)
 
     def info(self, domain, msg="", origin=None):
-        if self._should_log(PM_INFO):
-            self._enqueue_log(PM_INFO, domain, msg, origin)
+        if self._should_log(INFO):
+            self._enqueue_log(INFO, domain, msg, origin)
 
     def warn(self, domain, msg="", origin=None):
-        if self._should_log(PM_WARN):
-            self._enqueue_log(PM_WARN, domain, msg, origin)
+        if self._should_log(WARN):
+            self._enqueue_log(WARN, domain, msg, origin)
 
     def error(self, domain, msg="", origin=None):
-        if self._should_log(PM_ERROR):
-            self._enqueue_log(PM_ERROR, domain, msg, origin)
+        if self._should_log(ERROR):
+            self._enqueue_log(ERROR, domain, msg, origin)
 
     def fatal(self, domain, msg="", origin=None):
-        if self._should_log(PM_FATAL):
-            self._enqueue_log(PM_FATAL, domain, msg, origin)
+        if self._should_log(FATAL):
+            self._enqueue_log(FATAL, domain, msg, origin)
 
     def data(self, name, data_str):
         # lightweight wrapper for application data entries
@@ -299,9 +217,9 @@ class Logger:
           - 'normal' -> restore original
         """
         if mode_name == "low":
-            self.level = PM_WARN
+            self.level = WARN
         elif mode_name == "medium":
-            self.level = PM_WARN
+            self.level = WARN
         elif mode_name == "normal":
             self.level = self._orig_level
 
@@ -319,14 +237,13 @@ _logger_instance: Logger | None = None
 
 
 def init_logger(
-        level=PM_INFO,
-        buffer_size=16,
+        level=INFO,
+        buffer_size=5,
         max_file_size_kb=64,
         file_path="logs.txt",
         data_path="data.txt",
         console=True,
         file_log=True,
-        flush_interval=5,
         max_rotations=3,
 ) -> Logger:
     """
@@ -343,10 +260,8 @@ def init_logger(
             data_path=data_path,
             console=console,
             file_log=file_log,
-            flush_interval=flush_interval,
             max_rotations=max_rotations,
         )
-        _logger_instance.start()  # start background flusher if uasyncio is available
     return _logger_instance
 
 
@@ -355,5 +270,8 @@ def logger() -> Logger:
     if _logger_instance is None:
         raise RuntimeError("Logger not initialized. Call init_logger() first.")
     return _logger_instance
+
+def _flusher_task():
+        logger().flush()
 
 #TODO: Review the flaws of this module

@@ -18,10 +18,21 @@ class Led:
         return self.pin.value()
 
     async def async_on(self):
-       await  self.pin.value(1)
+        self.pin.value(1)
 
     async def async_off(self):
         self.pin.value(0)
 
     async def async_toggle(self):
         self.pin.value(not self.pin.value())
+
+    async def async_blink(self,n:int, delay: float):
+        """
+        Turn on and of the LED for n times with a delay of delay seconds.
+        :param n:
+        :param delay:
+        :return:
+        """
+        for _ in range(n):
+            await self.async_toggle()
+            await asyncio.sleep(delay)
