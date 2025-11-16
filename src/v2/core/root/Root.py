@@ -45,7 +45,10 @@ class Task:
         """
         if isinstance(interval, int):
             return interval
-        elif isinstance(interval, str):
+
+        interval = interval.lower().strip()
+
+        if isinstance(interval, str):
             if interval.endswith("ms"):
                 return int(interval[:-2])
             elif interval.endswith("s"):
@@ -112,7 +115,7 @@ class Root:
 
         self.optimize()
 
-        logger().debug("Root",f"Task {_task.name} added to root scheduler", "add")
+        logger().debug(f"Task {_task.name} added to root scheduler")
 
     def optimize(self):
         """
@@ -127,7 +130,7 @@ class Root:
             t =  min([t.interval for t in self._tasks])
             self._min_sleep_time = t if t > self._min_sleep_time else self._min_sleep_time
 
-        logger().debug("Root",f"Root scheduler optimized","optimize")
+        logger().debug(f"Root scheduler optimized")
 
     def remove(self, _task: Task | str):
         """
@@ -140,7 +143,7 @@ class Root:
             if _task is None:
                 _task = next((t for t in self._boot_tasks if t.name == _task), None)
                 if _task is None:
-                    logger().warn("Root",f"Task {_task} not found", "remove")
+                    logger().warn(f"Task {_task} not found")
                     return
 
         if _task.boot:
@@ -148,7 +151,7 @@ class Root:
         else:
             self._tasks.remove(_task)
 
-        logger().debug("Root",f"Task {_task.name} removed from root scheduler", "remove")
+        logger().debug(f"Task {_task.name} removed from root scheduler")
 
     async def sleep(self):
         """
@@ -156,7 +159,7 @@ class Root:
         :return: None
         """
         led = Led("LED", Pin.OUT)
-        if self.power_monitor and True==False:
+        if self.power_monitor and True==False: #TODO: Remove this line,for testing only
             await led.async_blink(2,0.2)
             lightsleep(self._min_sleep_time)
         # TODO: Add deepsleep support with state saving
@@ -184,7 +187,7 @@ class Root:
         del self._boot_tasks[:]
 
         emit(EVENT_ROOT_LOOP_BOOT_AFTER,"")
-        logger().debug("Root",f"Root boot completed","boot")
+        logger().debug(f"Root boot completed")
 
 
 
@@ -219,7 +222,7 @@ class Root:
         except KeyboardInterrupt:
             print("Application stopped manually.")
         except Exception as e:
-            logger().fatal("Root", f"Unhandled exception in Root.run: {e}", "run")
+            logger().fatal( f"Unhandled exception in Root.run: {e}")
 
 
 

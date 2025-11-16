@@ -1,4 +1,5 @@
 from micropython import const
+import ustruct
 
 # --------------------- Old config ---------------------
 # TODO: Needs to be revised
@@ -66,9 +67,25 @@ ERROR = const(2)
 WARN = const(3)
 INFO = const(4)
 DEBUG = const(5)
+TRACE = const(6)
 
 # Map names (optional)
 LEVEL_NAMES = {
     FATAL: "FATAL", ERROR: "ERROR", WARN: "WARN",
-    INFO: "INFO", DEBUG: "DEBUG", OFF: "OFF"
+    INFO: "INFO", DEBUG: "DEBUG", OFF: "OFF", TRACE: "TRACE"
 }
+
+
+LEVEL_BYTES = {
+    OFF:   ustruct.pack('B', OFF),
+    FATAL: ustruct.pack('B', FATAL),
+    ERROR: ustruct.pack('B', ERROR),
+    WARN:  ustruct.pack('B', WARN),
+    INFO:  ustruct.pack('B', INFO),
+    DEBUG: ustruct.pack('B', DEBUG),
+    TRACE: ustruct.pack('B', TRACE)
+}
+
+# File paths
+LOG_FILE_PATH = const("logs.bin")
+DATA_FILE_PATH = const("data.txt")

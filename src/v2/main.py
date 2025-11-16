@@ -7,5 +7,8 @@ vd = VoltageDivider(28,10_000,5_100)
 async def measure_voltage():
     v = await vd.async_mean_real_voltage()
     logging.logger().data("V:",v)
+    logging.logger().warn("This is a warning")
+    logging.logger().error("This is an error")
+    logging.logger().fatal("This is a fatal error")
 
 start()

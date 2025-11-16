@@ -1,6 +1,3 @@
-# ringbuf.py
-# MicroPython-optimized circular buffer / queue
-
 try:
     import machine
     def _disable_irq():
@@ -149,6 +146,13 @@ class RingBuffer:
             idx = self._inc(idx)
         return out
 
+    def __iter__(self):
+        """Return iterator over elements in order."""
+        idx = self._tail
+        for _ in range(self._count):
+            yield self._buf[idx]
+            idx = self._inc(idx)
+
     def __len__(self):
         return self._count
 
@@ -264,6 +268,13 @@ class ByteRingBuffer:
     def to_bytes(self):
         """Return contents in order as bytes (allocates)."""
         return b''.join(self.get(self._count) for _ in (0,)) if self._count else b''
+
+    def __iter__(self):
+        """Return iterator over elements in order."""
+        idx = self._tail
+        for _ in range(self._count):
+            yield self._buf[idx]
+            idx = self._inc(idx)
 
     def __len__(self):
         return self._count
