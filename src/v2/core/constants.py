@@ -31,6 +31,12 @@ POWER_VOLTAGE_DIVIDER_ENABLED = const("power.voltage_divider.enabled")
 POWER_VOLTAGE_DIVIDER_R1 = const("power.voltage_divider.r1")
 POWER_VOLTAGE_DIVIDER_R2 = const("power.voltage_divider.r2")
 
+LOGGER_LEVEL = const("system.logger.level")
+LOGGER_BUFFER_SIZE = const("system.logger.buffersize")
+LOGGER_MAX_FILE_SIZE = const("system.logger.max_file_size")
+LOGGER_CONSOLE = const("system.logger.log_to_console")
+LOGGER_FILE_LOG = const("system.logger.log_to_file")
+LOGGER_MAX_ROTATIONS = const("system.logger.max_rotations")
 
 
 SLEEP_INTERVAL = const("system.runtime.interval")
@@ -74,7 +80,10 @@ LEVEL_NAMES = {
     FATAL: "FATAL", ERROR: "ERROR", WARN: "WARN",
     INFO: "INFO", DEBUG: "DEBUG", OFF: "OFF", TRACE: "TRACE"
 }
-
+LEVEL_NAMES_REV = {
+    "FATAL" : FATAL, "ERROR":ERROR, "WARN":WARN,
+    "INFO":INFO, "DEBUG":DEBUG,"OFF":OFF,  "TRACE":TRACE
+}
 
 LEVEL_BYTES = {
     OFF:   ustruct.pack('B', OFF),

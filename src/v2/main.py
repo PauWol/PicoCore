@@ -1,14 +1,11 @@
 from core import start,task , logging
-from core.io import VoltageDivider
 
-vd = VoltageDivider(28,10_000,5_100)
+@task("2s",False)
+def test():
+    print("2s")
 
-@task("5s")
-async def measure_voltage():
-    v = await vd.async_mean_real_voltage()
-    logging.logger().data("V:",v)
-    logging.logger().warn("This is a warning")
-    logging.logger().error("This is an error")
-    logging.logger().fatal("This is a fatal error")
 
+@task("3s",False)
+def testt():
+    print("3s")
 start()

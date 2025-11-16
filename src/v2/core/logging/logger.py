@@ -1,4 +1,6 @@
-from ..constants import TRACE , INFO , DEBUG , FATAL , ERROR , WARN , LEVEL_NAMES , LOG_FILE_PATH , DATA_FILE_PATH , LEVEL_BYTES
+from ..constants import TRACE , INFO , DEBUG , FATAL , ERROR , WARN , LEVEL_NAMES , LOG_FILE_PATH , DATA_FILE_PATH , LEVEL_BYTES , LOGGER_LEVEL ,\
+LOGGER_BUFFER_SIZE , LOGGER_MAX_FILE_SIZE , LOGGER_CONSOLE , LOGGER_FILE_LOG , LOGGER_MAX_ROTATIONS , LEVEL_NAMES_REV
+from ..config import get_config
 from ..util import _file_exists , uptime , create_file
 from ..queue import RingBuffer , ByteRingBuffer
 import ustruct
@@ -9,7 +11,7 @@ class Logger:
         """
          Logger class for logging messages to console and file.As well as application data entries.
          :param level: Can be TRACE, DEBUG, INFO, WARN, ERROR, FATAL  as int-> (0,1,2,3,4,5) use constants for best efficiency
-         :param buffer_size: The size of the log buffer/ data buffer if full the logs/data will be flushed to disk.
+         :param buffer_size: The size of the log buffer/ data buffer if full the logs/data will be flushed to disk. (45 bytes per log entry; buffer_size * 45 bytes)
          :param max_file_size: The maximum size of the log- / datafile before it is rotated.
          :param console: Weather logs should be printed to console
          :param file_log: Weather logs should be written to file
@@ -22,7 +24,7 @@ class Logger:
         self.file_log = file_log
         self.max_bytes = self._parse_size(max_file_size)
         self.max_rotations = max_rotations
-        print(self.max_bytes)
+
         # runtime
         self._orig_level = self.level
         self._log_buf = ByteRingBuffer(self.buffer_size)
@@ -205,7 +207,7 @@ class Logger:
     # -------------------------
     # Public log API
     # -------------------------
-    def _should_log(self, level_int):
+    def _should_log(self, level_int:int):
         return level_int <= self.level
 
     def trace(self, msg=""):
@@ -280,13 +282,14 @@ def init_logger(level=INFO,buffer_size=5,max_file_size="64kb",console=True,file_
     """
     global _logger_instance
     if _logger_instance is None:
+        cfg = get_config()
         _logger_instance = Logger(
-            level=level,
-            buffer_size=buffer_size,
-            max_file_size=max_file_size,
-            console=console,
-            file_log=file_log,
-            max_rotations=max_rotations
+            level=LEVEL_NAMES_REV.get(cfg.get(LOGGER_LEVEL)) or level,
+            buffer_size=cfg.get(LOGGER_BUFFER_SIZE) or buffer_size,
+            max_file_size=cfg.get(LOGGER_MAX_FILE_SIZE) or max_file_size,
+            console=cfg.get(LOGGER_CONSOLE) or console,
+            file_log=cfg.get(LOGGER_FILE_LOG) or file_log,
+            max_rotations=cfg.get(LOGGER_MAX_ROTATIONS) or max_rotations
         )
     return _logger_instance
 
@@ -296,7 +299,5 @@ def logger() -> Logger:
         raise RuntimeError("Logger not initialized. Call init_logger() first.")
     return _logger_instance
 
-def _flusher_task():
-        logger().flush()
 
 # TODO: Better data loging logic

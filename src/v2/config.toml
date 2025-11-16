@@ -1,14 +1,13 @@
 [system]
-name = "PicoCore V2"
-version = "1.0.0"
-rtc_sync_stamp = 1757878508
 
 [system.logger]
 level = "INFO"
 buffersize = 5
-max = 600
+ # int (bytes) or str with suffix ("1b" , "1kb" , "1mb")
+max_file_size = "64kb"
 log_to_console = true
 log_to_file = true
+max_rotations = 3
 
 [system.health]
 onboard_status_led = false
@@ -16,7 +15,6 @@ check_interval = 5000
 
 [system.runtime]
 interval = 0.1 # in s
-min_battery_low_auto_extend_runtime = 30 # in min
 
 [power]
 

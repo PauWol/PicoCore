@@ -1,9 +1,10 @@
 from uasyncio import sleep as async_sleep, create_task
 from time import ticks_ms,ticks_diff
 from machine import lightsleep , deepsleep,Pin
+from ..queue import RingBuffer
 from ..config import get_config
 from ..constants import POWER_MONITOR_ENABLED,SLEEP_INTERVAL, EVENT_ROOT_LOOP_BOOT, EVENT_ROOT_LOOP_BOOT_BEFORE, EVENT_ROOT_LOOP_BOOT_AFTER
-from ..logging import logger,_flusher_task
+from ..logging import logger
 from .Bus import emit , on
 from ..io import Led
 from ..util import boot_flag_task
@@ -19,15 +20,16 @@ IDLE     = 5
 """
 
 class Task:
-    __slots__ = ('name', 'interval', 'last_run', 'callback', 'async_task', 'enabled', 'priority', 'boot', 'parallel')
+    __slots__ = ('name', 'interval', 'last_run','next_run', 'callback', 'async_task', 'enabled', 'priority', 'boot', 'parallel')
 
     def __repr__(self):
-        return f"Task(name={self.name}, interval={self.interval}, last_run={self.last_run}, callback={self.callback}, async_task={self.async_task}, enabled={self.enabled}, priority={self.priority}, boot={self.boot}, parallel={self.parallel})"
+        return f"Task(name={self.name}, interval={self.interval}, last_run={self.last_run},next_run={self.next_run}, callback={self.callback}, async_task={self.async_task}, enabled={self.enabled}, priority={self.priority}, boot={self.boot}, parallel={self.parallel})"
 
     def __init__(self,name: str, interval: str|int, callback,async_task:bool = True, enabled: bool = True, priority: int = 3,boot:bool = False,parallel:bool = False):
         self.name = name
         self.interval = self._parse_interval(interval)
         self.last_run = 0
+        self.next_run = self.last_run + self.interval
         self.callback = callback
         self.async_task = async_task
         self.enabled = enabled
@@ -66,6 +68,7 @@ class Task:
 
     def run(self,now:int):
         self.last_run = now
+        self.next_run = self.last_run + self.interval
         self.callback()
 
         if self.boot:
@@ -73,6 +76,7 @@ class Task:
 
     async def run_async(self,now:int):
         self.last_run = now
+        self.next_run = self.last_run + self.interval
         await self.callback()
 
         if self.boot:
@@ -85,9 +89,13 @@ class Root:
         # Interval for async sleep in main loop
         self.sleep_interval = self.conf.get(SLEEP_INTERVAL) or 0.1
         self.power_monitor = self.conf.get(POWER_MONITOR_ENABLED) or False
+        self.dynamic_sleep = False
 
         self._boot_tasks = []
         self._tasks = []
+
+        # Is initialized if dynamic sleep is enabled and in loop start first
+        self._time_proposal_buffer: RingBuffer| None = None
 
         # time for actual light- or later deepsleep
         self._min_sleep_time = 100 # ms
@@ -98,9 +106,6 @@ class Root:
 
         # boot flag task
         self.add(Task("boot_flag_task","1ms",callback= boot_flag_task,boot=True,priority=0,enabled=True,parallel=True))
-
-        # logger flush task
-        #self.add(Task("logger_flush_task",self._min_sleep_time,callback= _flusher_task,async_task=False,boot=False,priority=1,enabled=True,parallel=False))
 
     def add(self, _task:Task):
         """
@@ -130,7 +135,12 @@ class Root:
             t =  min([t.interval for t in self._tasks])
             self._min_sleep_time = t if t > self._min_sleep_time else self._min_sleep_time
 
-        logger().debug(f"Root scheduler optimized")
+            if all(_task.interval % t == 0 for _task in self._tasks):
+                self.dynamic_sleep = True
+
+                #TODO: Maybe add else = false
+
+        logger().debug("Root scheduler optimized")
 
     def remove(self, _task: Task | str):
         """
@@ -163,7 +173,9 @@ class Root:
             await led.async_blink(2,0.2)
             lightsleep(self._min_sleep_time)
         # TODO: Add deepsleep support with state saving
-
+            if self.dynamic_sleep:
+                self._min_sleep_time = min(self._time_proposal_buffer)
+                self._time_proposal_buffer.clear()
         else:
             await led.async_toggle()
             await async_sleep(self.sleep_interval)
@@ -196,6 +208,8 @@ class Root:
         The root main execution loop running all tasks (excluded boot marked ones)
         :return:
         """
+        if self.dynamic_sleep:
+            self._time_proposal_buffer = RingBuffer(len(self._tasks),True)
 
         while self.running:
             now = ticks_ms()
@@ -207,6 +221,9 @@ class Root:
                         create_task(_task.run_async(now))
                     else:
                         _task.run(now)
+
+                if self.dynamic_sleep:
+                    self._time_proposal_buffer.put(ticks_diff(_task.next_run,now)) #TODO: Review this line
             await self.sleep()
 
     def run(self):
