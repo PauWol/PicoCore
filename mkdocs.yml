@@ -56,9 +56,17 @@ markdown_extensions:
   - pymdownx.keys
   - pymdownx.mark
   - pymdownx.tilde
+  - pymdownx.arithmatex:
+      generic: true
+
+extra_javascript:
+  - javascripts/katex.js
+  - https://unpkg.com/katex@0/dist/katex.min.js
+  - https://unpkg.com/katex@0/dist/contrib/auto-render.min.js
 
 extra_css:
   - stylesheets/extra.css
+  - https://unpkg.com/katex@0/dist/katex.min.css
 
 extra:
   social:
@@ -72,14 +80,19 @@ nav:
   - Getting Started: setup.md
   - Supported Hardware: hardware.md
   - Configuration:
-      - Overview: conf/overview.md
       - PicoCore V2:
           - config.toml: conf/v2/config.md
       - Legacy V1: conf/v1Legacy/config.md
   - Usage & API:
       - Overview: api/overview.md
-      - V1 Legacy: api/v1-legacy.md
-      - V2: api/v2.md
+      - Legacy V1: api/v1-legacy.md
+      - PicoCore V2:
+          - Root:
+              - Runtime: api/V2/root/init.md
+              - Tasks: api/V2/root/tasks.md
+          - Pins (IO):
+              - ADC: api/V2/pins/adc.md
+
   - Concepts:
       - Services: concepts/services.md
       - P10: concepts/P10.md

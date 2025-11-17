@@ -19,9 +19,9 @@ This guide helps you set up PicoCore from scratch, flash your board, and run you
 
 ### 2. Flash MicroPython firmware
 
-!!! tip "Tip: BOOTSEL mode"
+???+ "Tip: BOOTSEL mode"
 
-To enter bootloader mode, hold {==BOOTSEL==} on your Pico/Pico W and plug it into your PC.
+    To enter bootloader mode, hold {==BOOTSEL==} on your Pico/Pico W and plug it into your PC.
 
 1. Your board will mount as a **RPI-RP2** drive.
 2. Copy the `.uf2` firmware file onto it.
@@ -153,15 +153,15 @@ You have successfully installed and tested PicoCore.
 PicoCore can be customized via `config.toml`.
 
 ```toml
-[logging]
-level = "info"
+[system]
 
-[network]
-wifi_ssid = "MyWiFi"
-wifi_password = "secret123"
+[system.logger]
+level = "INFO"
+buffersize = 5
+...
 ```
 
-See the [Configuration Guide](conf/overview.md) for details.
+See the [Configuration Guide](conf/v2/config.md) for details.
 
 !!! warning "Version differences"
 Different PicoCore releases may ship with slightly different `config.toml` defaults. Always check the `README` in your release archive.
