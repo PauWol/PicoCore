@@ -25,17 +25,24 @@ class Task:
     def __repr__(self):
         return f"Task(name={self.name}, interval={self.interval}, last_run={self.last_run},next_run={self.next_run}, callback={self.callback}, async_task={self.async_task}, enabled={self.enabled}, priority={self.priority}, boot={self.boot}, parallel={self.parallel})"
 
-    def __init__(self,name: str, interval: str|int, callback,async_task:bool = True, enabled: bool = True, priority: int = 3,boot:bool = False,parallel:bool = False):
+    def __init__(self,name: str, callback, interval: str|int|None = None ,async_task:bool = True, enabled: bool = True, priority: int = 3,boot:bool = False,parallel:bool = False):
         self.name = name
-        self.interval = self._parse_interval(interval)
-        self.last_run = 0
-        self.next_run = self.last_run + self.interval
         self.callback = callback
         self.async_task = async_task
         self.enabled = enabled
         self.priority = priority
         self.boot = boot
         self.parallel = parallel
+        self.interval = 0
+        self.last_run = 0
+        self.next_run = self.last_run + self.interval
+        if interval:
+            self.interval = self._parse_interval(interval)
+            self.last_run = 0
+            self.next_run = self.last_run + self.interval
+        if boot and interval:
+            logger().warn(f"Interval {interval} for boot task {name} is ignored: {self.__repr__()}")
+
 
     @staticmethod
     def _parse_interval(interval: str|int) -> int:
@@ -105,7 +112,7 @@ class Root:
     def _init_system_tasks(self):
 
         # boot flag task
-        self.add(Task("boot_flag_task","1ms",callback= boot_flag_task,boot=True,priority=0,enabled=True,parallel=True))
+        self.add(Task("boot_flag_task",boot_flag_task,boot=True,priority=0,enabled=True,parallel=True))
 
     def add(self, _task:Task):
         """
@@ -170,14 +177,12 @@ class Root:
         """
         led = Led("LED", Pin.OUT)
         if self.power_monitor and True==False: #TODO: Remove this line,for testing only
-            await led.async_blink(2,0.2)
             lightsleep(self._min_sleep_time)
         # TODO: Add deepsleep support with state saving
             if self.dynamic_sleep:
                 self._min_sleep_time = min(self._time_proposal_buffer)
                 self._time_proposal_buffer.clear()
         else:
-            await led.async_toggle()
             await async_sleep(self.sleep_interval)
 
 
@@ -269,7 +274,7 @@ def task(interval: str|int, async_task: bool = True, enabled: bool = True, prior
     :return:
     """
     def deco(fn):
-        root().add(Task(fn.__name__, interval, fn, async_task, enabled, priority,boot,parallel))
+        root().add(Task(fn.__name__,fn,interval, async_task, enabled, priority,boot,parallel))
         return fn
     return deco
 

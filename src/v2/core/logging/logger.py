@@ -132,13 +132,13 @@ class Logger:
                 self.flush_logs()
 
     def _enqueue_data(self, name, data_str):
-        if not self.file_log:
-            return
 
-        line = f"{self._timestamp()}|{name}|{data_str}\n"
+        line = f"{self._timestamp()},{name},{data_str}\n"
         self._data_buf.put(line)
         if self._data_buf.is_full():
             self.flush_data()
+
+
 
     def flush_logs(self):
         """Write buffered log lines to disk and rotate if needed. Small-chunk write only."""

@@ -229,6 +229,5 @@ class VoltageDivider(ADC):
         readings = await self.async_samples(n, "voltage", delay)
         avg_raw = sum(readings) / len(readings)
         v = avg_raw * (self.r1 + self.r2) / self.r2
-        print(v)
         return v
 
