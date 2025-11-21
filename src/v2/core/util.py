@@ -1,4 +1,13 @@
+"""
+PicoCore V2 Util Module
+
+This module provides utility functions for file operations, system information,
+and other common tasks.
+"""
+import time
 import os
+import sys
+import machine
 import uasyncio as asyncio
 from .constants import BOOT_FLAG, BOOT_WINDOW_MS
 
@@ -7,46 +16,53 @@ from .constants import BOOT_FLAG, BOOT_WINDOW_MS
 def _file_exists(name):
     try:
         return name in os.listdir()
-    except Exception:
+    except FileNotFoundError:
         # if filesystem not mounted or error -> conservatively assume no file
         try:
             return name in os.listdir("/")   # fallback
-        except Exception:
+        except FileNotFoundError:
             return False
 
-def create_boot_flag():
+def _create_boot_flag(encoding:str = "utf-8"):
     try:
-        with open(BOOT_FLAG, "w") as f:
+        with open(BOOT_FLAG, "w",encoding=encoding) as f:
             f.write("1")
-    except Exception:
+    except OSError:
         # silently ignore write errors (rare)
         pass
 
-def remove_boot_flag():
+def _remove_boot_flag():
     try:
         if _file_exists(BOOT_FLAG):
             os.remove(BOOT_FLAG)
-    except Exception:
+    except OSError:
         # ignore errors; not critical
         pass
 
 async def _delayed_clear_boot_flag():
     # Run as uasyncio task; sleeps, then removes flag.
     await asyncio.sleep_ms(BOOT_WINDOW_MS)
-    remove_boot_flag()
+    _remove_boot_flag()
 
 async def boot_flag_task():
+    """
+    This function checks if the boot flag file exists and if it does,
+    it runs the _delayed_clear_boot_flag function.
+    :return:
+    """
     if _file_exists(BOOT_FLAG):
         await _delayed_clear_boot_flag()
 
 
-def create_file(path:str):
-    try:
-        with open(path, "w") as f:
-            f.write("")
-    except Exception:
-        pass
-
+def create_file(path:str, encoding:str = "utf-8"):
+    """
+    This function creates a file at the specified path.
+    :param encoding: The encoding to use when writing the file.
+    :param path: The path to the file to create.
+    :return:
+    """
+    with open(path, "w",encoding=encoding) as f:
+        f.write("")
 
 def uptime(ms: bool = False, formatted: bool = False) -> int | str:
     """
@@ -79,14 +95,13 @@ def uptime(ms: bool = False, formatted: bool = False) -> int | str:
         The formatted output shows days, hours (24-hour format), minutes, and seconds.
         Hours, minutes, and seconds are zero-padded to two digits.
     """
-    import time
 
     # get uptime in ms
     uptime_ms = time.ticks_diff(time.ticks_ms(), 0)
 
     if formatted:
         total_ms = uptime_ms
-        total_s, remainder_ms = divmod(total_ms, 1000)
+        total_s, _ = divmod(total_ms, 1000)
         m, s = divmod(total_s, 60)
         h, m = divmod(m, 60)
         d, h = divmod(h, 24)
@@ -119,26 +134,63 @@ def uuid(byte: bool = False) -> bytes | str:
         >>> uuid()  # Returns hex string like 'e6614c311b2c5c28'
         >>> uuid(byte=True)  # Returns raw bytes
     """
-
-    import machine
     if byte:
         return machine.unique_id()
 
     return machine.unique_id().hex()
 
-
 def version() -> tuple[str, str]:
     """
     Get the current version of PicoCore.
 
-    Returns:
-        tuple[str,str]: The version string in semantic versioning format (e.g., ["2.0.0" , "1.26.1"] ).
+    :return: The version string in semantic
+            versioning format (e.g., ["2.0.0" , "1.26.1"] ).
+    :raises ValueError: If the version file could not be read.
     """
-    import os
-
     if os.stat("./.version").st_size >= 13:
-        with open("./.version", "r") as version_file:
+        with open("./.version", "r",encoding="utf-8") as version_file:
             return version_file.read().strip().split("\n")
     else:
-        raise ValueError("Version file could not be read")
+        raise ValueError("Version file could not be read."
+                         "Please check if the file exists and is not empty.")
 
+
+
+def get_onboard_led() -> int | str:
+    """
+    Get the onboard LED pin. (Platform dependent)
+    :return: The onboard LED pin.
+    """
+    platform = sys.platform
+
+    # -------------------------
+    # Raspberry Pi Pico / Pico W
+    # -------------------------
+    if platform.startswith("rp2"):              # Pi Pico
+        try:
+            return "LED"
+        except Exception as e:
+            raise RuntimeError("Pico LED not available") from e
+
+    # -------------------------
+    # ESP32 family
+    # -------------------------
+    if platform.startswith("esp32"):            # ESP32, ESP32-C3, S2, S3
+        candidate_pins = (2, 8, 19, 38)         # common boards
+
+        for pin in candidate_pins:
+            try:
+                p = machine.Pin(pin, machine.Pin.OUT)
+                p.value(1)                      # test LED ON
+                p.value(0)                      # OFF
+                return pin
+            except Exception:
+                pass
+
+
+    # -------------------------
+    # Other systems
+    # -------------------------
+    raise RuntimeError("Unsupported platform: " + platform)
+
+ONBOARD_LED: str | int | None = get_onboard_led()

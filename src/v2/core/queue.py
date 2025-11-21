@@ -1,15 +1,28 @@
-try:
-    import machine
-    def _disable_irq():
-        return machine.disable_irq()
-    def _enable_irq(state):
-        machine.enable_irq(state)
-except Exception:
-    # machine may not exist (e.g. running on PC for tests)
-    def _disable_irq():
-        return None
-    def _enable_irq(_):
-        return None
+"""
+PicoCore V2 Queue Module
+
+This module provides a RingBuffer and ByteRingBuffer class
+for a ring buffer of arbitrary Python objects and bytes.
+
+Usage:
+    from core.queue import RingBuffer, ByteRingBuffer
+
+    rb = RingBuffer(10)
+    rb.put(1)
+    rb.put(2)
+    rb.put(3)
+    print(rb.get())
+    print(rb.get())
+    print(rb.get())
+"""
+
+import machine
+def _disable_irq() -> object:
+    return machine.disable_irq()
+def _enable_irq(state: int) -> None:
+    machine.enable_irq(state)
+
+
 
 class RingBuffer:
     """
@@ -19,31 +32,32 @@ class RingBuffer:
     Methods: put, get, peek, clear, available, free, is_empty, is_full, to_list, extend
     """
 
-    def __init__(self, capacity, overwrite=False):
+    def __init__(self, capacity: int, overwrite: bool = False) -> None:
         if capacity <= 0:
             raise ValueError("capacity must be > 0")
         self._cap = int(capacity)
-        self._buf = [None] * self._cap
+        self._buf: list[object | None] = [None] * self._cap
         self._head = 0  # index for next write
         self._tail = 0  # index for next read
         self._count = 0
         self._overwrite = bool(overwrite)
+        self._mask : int | None = None
         # mask optimization when capacity is power of two
         if (self._cap & (self._cap - 1)) == 0:
             self._mask = self._cap - 1
         else:
             self._mask = None
 
-    def _inc(self, idx, step=1):
+    def _inc(self, idx: int, step: int = 1) -> int:
         if self._mask is not None:
             return (idx + step) & self._mask
-        else:
-            n = idx + step
-            if n >= self._cap:
-                n -= self._cap
-            return n
 
-    def put(self, item):
+        n = idx + step
+        if n >= self._cap:
+            n -= self._cap
+        return n
+
+    def put(self, item: object) -> None:
         """Push item. If full:
            - if overwrite=True, oldest item is dropped and new item stored
            - else raises IndexError
@@ -62,11 +76,12 @@ class RingBuffer:
         finally:
             _enable_irq(irq_state)
 
-    def put_list(self, items):
+    def put_list(self, items: list[object]) -> None:
+        """Push multiple items until the buffer is full (or all items consumed)."""
         for item in items:
             self.put(item)
 
-    def get(self):
+    def get(self) -> object:
         """Pop and return oldest item. Raises IndexError if empty."""
         irq_state = _disable_irq()
         try:
@@ -81,8 +96,10 @@ class RingBuffer:
         finally:
             _enable_irq(irq_state)
 
-    def peek(self, index=0):
-        """Peek at item `index` (0 is oldest) without removing. Raises IndexError if out of range."""
+    def peek(self, index: int = 0) -> object:
+        """Peek at item `index` (0 is oldest) without removing.
+            Raises IndexError if out of range.
+        """
         if index < 0 or index >= self._count:
             raise IndexError("peek index out of range")
         pos = self._tail
@@ -95,13 +112,13 @@ class RingBuffer:
                 pos -= self._cap
         return self._buf[pos]
 
-    def peek_latest(self):
+    def peek_latest(self) -> object:
         """Return the newest (most recently added) item without removing it."""
         if self._count == 0:
             raise IndexError("peek from empty buffer")
         return self.peek(self._count - 1)
 
-    def extend(self, iterable):
+    def extend(self, iterable: list[object]) -> None:
         """Push multiple items until the buffer is full (or all items consumed)."""
         for it in iterable:
             try:
@@ -110,7 +127,7 @@ class RingBuffer:
                 # buffer full and overwrite=False
                 break
 
-    def clear(self, keep_memory=False):
+    def clear(self, keep_memory: bool = False) -> None:
         """Clear buffer. If keep_memory is False, zero-out storage (helps GC)."""
         irq_state = _disable_irq()
         try:
@@ -123,41 +140,49 @@ class RingBuffer:
         finally:
             _enable_irq(irq_state)
 
-    def available(self):
+    def available(self) -> int:
         """Number of items stored."""
         return self._count
 
-    def free(self):
+    def free(self) -> int:
         """Remaining capacity."""
         return self._cap - self._count
 
-    def is_empty(self):
+    def is_empty(self) -> bool:
+        """
+        Whether the buffer is empty or not.
+        :return: True if the buffer is empty, False otherwise.
+        """
         return self._count == 0
 
-    def is_full(self):
+    def is_full(self) -> bool:
+        """
+        Whether the buffer is full or not.
+        :return: True if the buffer is full, False otherwise.
+        """
         return self._count == self._cap
 
-    def to_list(self):
+    def to_list(self) -> list[object]:
         """Return elements in order as a list (allocates)."""
-        out = []
+        out: list[object] = []
         idx = self._tail
         for _ in range(self._count):
             out.append(self._buf[idx])
             idx = self._inc(idx)
         return out
 
-    def __iter__(self):
+    def __iter__(self): # type: ignore
         """Return iterator over elements in order."""
         idx = self._tail
         for _ in range(self._count):
             yield self._buf[idx]
             idx = self._inc(idx)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self._count
 
-    def __repr__(self):
-        return "<RingBuffer cap={} items={}>".format(self._cap, self._count)
+    def __repr__(self) -> str:
+        return f"<RingBuffer cap={self._cap} items={self._count}>"
 
 
 class ByteRingBuffer:
@@ -167,7 +192,7 @@ class ByteRingBuffer:
     Methods similar to RingBuffer but works with bytes/ints and supports bulk put/get.
     """
 
-    def __init__(self, capacity):
+    def __init__(self, capacity: int) -> None:
         if capacity <= 0:
             raise ValueError("capacity must be > 0")
         self._cap = int(capacity)
@@ -175,21 +200,22 @@ class ByteRingBuffer:
         self._head = 0
         self._tail = 0
         self._count = 0
+        self._mask: int | None = None
         if (self._cap & (self._cap - 1)) == 0:
             self._mask = self._cap - 1
         else:
             self._mask = None
 
-    def _inc(self, idx, step=1):
+    def _inc(self, idx: int, step: int = 1) -> int:
         if self._mask is not None:
             return (idx + step) & self._mask
-        else:
-            n = idx + step
-            if n >= self._cap:
-                n -= self._cap
-            return n
 
-    def put(self, data):
+        n = idx + step
+        if n >= self._cap:
+            n -= self._cap
+        return n
+
+    def put(self, data: int | bytes | bytearray | list[int]) -> int:
         """
         Put bytes or int.
         - if int: put single byte (0-255), raises IndexError if full.
@@ -217,20 +243,19 @@ class ByteRingBuffer:
         finally:
             _enable_irq(irq_state)
 
-    def get(self, n=1):
+    def get(self, n: int = 1) -> bytes:
         """
-        Retrieve up to n bytes. Returns bytes object (may be shorter than requested
+        Retrieve up to n bytes. Returns bytes object (maybe shorter than requested
         if buffer didn't have enough). If n==1 returns a single int for speed?
         To keep API simple we return bytes always.
         """
         irq_state = _disable_irq()
         try:
-            if self._count == 0:
+            if n <= 0 or self._count == 0:
                 return b''
-            if n <= 0:
-                return b''
-            if n > self._count:
-                n = self._count
+
+            n = min(n, self._count)
+
             # assemble result
             out = bytearray(n)
             for i in range(n):
@@ -241,13 +266,25 @@ class ByteRingBuffer:
         finally:
             _enable_irq(irq_state)
 
-    def available(self):
+    def available(self) -> int:
+        """
+        How many bytes are in the buffer.
+        :return: Returns the number of bytes that are in the buffer.
+        """
         return self._count
 
-    def free(self):
+    def free(self) -> int:
+        """
+        How much space is left in the buffer.
+        :return: Returns the number of bytes that can be
+                added to the buffer before it is full.
+        """
         return self._cap - self._count
 
-    def clear(self):
+    def clear(self) -> None:
+        """
+        Clear the buffer.
+        """
         irq_state = _disable_irq()
         try:
             # zeroing not strictly necessary but helps deterministic state
@@ -259,25 +296,33 @@ class ByteRingBuffer:
         finally:
             _enable_irq(irq_state)
 
-    def is_empty(self):
+    def is_empty(self) -> bool:
+        """
+        Whether the buffer is empty or not.
+        :return: True if the buffer is empty, False otherwise.
+        """
         return self._count == 0
 
-    def is_full(self):
+    def is_full(self) -> bool:
+        """
+        Whether the buffer is full or not.
+        :return: True if the buffer is full, False otherwise.
+        """
         return self._count == self._cap
 
-    def to_bytes(self):
+    def to_bytes(self) -> bytes:
         """Return contents in order as bytes (allocates)."""
         return b''.join(self.get(self._count) for _ in (0,)) if self._count else b''
 
-    def __iter__(self):
+    def __iter__(self): # type: ignore
         """Return iterator over elements in order."""
         idx = self._tail
         for _ in range(self._count):
             yield self._buf[idx]
             idx = self._inc(idx)
 
-    def __len__(self):
+    def __len__(self) -> int:
         return self._count
 
-    def __repr__(self):
-        return "<ByteRingBuffer cap={} bytes={}>".format(self._cap, self._count)
+    def __repr__(self) -> str:
+        return f"<ByteRingBuffer cap={self._cap} bytes={self._count}>"

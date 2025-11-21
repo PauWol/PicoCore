@@ -1,11 +1,37 @@
+"""
+PicoCore V2 Core Module.
+
+This module is the core of PicoCore V2.
+It provides all modules and functions inherent to PicoCore V2.
+
+The following example is just the bare minimum to initiate and start the Root loop.
+More information can be found on the GitHub repository and its documentation site:
+-> https://github.com/PauWol/PicoCore.git ; https://pauwol.github.io/PicoCore/ .
+Usage:
+    from core import start,task
+    from core.logging import logger
+
+    @task("10s",False,boot=True)
+    def test():
+        logger().info("Your code works!")
+        logger().info("Main loop is running!")
+
+    start()
+"""
+import time
+from machine import Pin
 from . import config
 from .root import root , start , task , on , bus , emit , manual , off, stop
 from . import io
 from . import logging
 from . import constants
-from .util import version , uuid , uptime
+from .util import (version , uuid , uptime , _file_exists , BOOT_FLAG ,
+                   _remove_boot_flag , _create_boot_flag,ONBOARD_LED)
 
-__all__ = ['version', 'uuid','root','init','uptime','io','logging','constants','config','task','on','bus','emit','manual','off','start']
+__all__ = ['version', 'uuid','root','init','uptime','io','logging',
+           'constants','config','task','on','bus','emit','manual',
+           'off','start','ONBOARD_LED'
+        ]
 
 
 
@@ -19,17 +45,16 @@ def check_double_boot_and_maybe_enter_safe_mode():
       - Pass your Root instance so we can stop the scheduler if safe mode triggered.
     Returns True if safe mode was entered, False otherwise.
     """
-    from .util import _file_exists , BOOT_FLAG , remove_boot_flag , create_boot_flag
     # if boot flag exists → double-boot detected
     if _file_exists(BOOT_FLAG):
         # remove flag so future boots are normal
-        remove_boot_flag()
+        _remove_boot_flag()
         # Enter safe mode now
         stop()
         return True
 
     # otherwise create the flag and schedule a deferred removal
-    create_boot_flag()
+    _create_boot_flag()
 
     # schedule deletion after BOOT_WINDOW_MS inside event loop.
     # We cannot create uasyncio tasks safely from here if event loop not running.
@@ -46,19 +71,14 @@ def init():
     :return:
     """
     # Get/Initiate config
-    conf =config.get_config("config.toml")
+    config.get_config("config.toml")
     # Initiate logging
-    logging.init_logger() # TODO: Parse config args
+    logging.init_logger()
     # Initiate root
     root()
-    sb = check_double_boot_and_maybe_enter_safe_mode()
+    safe_boot = check_double_boot_and_maybe_enter_safe_mode()
 
-
-    # TODO: Use actual internal hardware indicator lib
-    import time
-    from machine import Pin
-
-    led = io.Led("LED", Pin.OUT)
+    led = io.Led(ONBOARD_LED, Pin.OUT)
 
     for _ in range(3):
         led.toggle()
@@ -68,7 +88,5 @@ def init():
 
     led.off()
 
-    if sb:
+    if safe_boot:
         led.on()
-
-

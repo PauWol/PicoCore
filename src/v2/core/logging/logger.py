@@ -1,10 +1,25 @@
+"""
+PicoCore V2 Logger Class
+
+Logger class for logging messages to console and file.As well as application data entries.
+
+Usage:
+    from core.logging import logger
+
+    logger = Logger()
+    logger.info("Hello World")
+    logger.data("test", "Hello World")
+"""
+
+import os
+import ustruct
+
 from ..constants import TRACE , INFO , DEBUG , FATAL , ERROR , WARN , LEVEL_NAMES , LOG_FILE_PATH , DATA_FILE_PATH , LEVEL_BYTES , LOGGER_LEVEL ,\
 LOGGER_BUFFER_SIZE , LOGGER_MAX_FILE_SIZE , LOGGER_CONSOLE , LOGGER_FILE_LOG , LOGGER_MAX_ROTATIONS , LEVEL_NAMES_REV
 from ..config import get_config
 from ..util import _file_exists , uptime , create_file
 from ..queue import RingBuffer , ByteRingBuffer
-import ustruct
-import os
+
 
 class Logger:
     def __init__(self,level:int=INFO, buffer_size:int=5, max_file_size:int|str="64kb", console:bool=True, file_log:bool=True, max_rotations:int=3):
@@ -19,7 +34,7 @@ class Logger:
          :return:
          """
         self.level = level
-        self.buffer_size = buffer_size * 45 # 45 bytes per log entry
+        self.buffer_size = buffer_size # 45 bytes per log entry
         self.console = console
         self.file_log = file_log
         self.max_bytes = self._parse_size(max_file_size)
@@ -27,16 +42,12 @@ class Logger:
 
         # runtime
         self._orig_level = self.level
-        self._log_buf = ByteRingBuffer(self.buffer_size)
+        self._log_buf = ByteRingBuffer(self.buffer_size * 45 )
         self._data_buf = RingBuffer(self.buffer_size,True)
 
         self.log_path = LOG_FILE_PATH
         self.data_path = DATA_FILE_PATH
         self._file_checks()
-
-    # -------------------------
-    # Internal util
-    # -------------------------
 
     def _file_checks(self) -> None:
         """
@@ -58,12 +69,11 @@ class Logger:
         size = size.strip().lower()
         if size.endswith("kb"):
             return int(size[:-2]) * 1024
-        elif size.endswith("mb"):
+        if size.endswith("mb"):
             return int(size[:-2]) * 1024 * 1024
-        elif size.endswith("b"):
+        if size.endswith("b"):
             return int(size[:-1])
-        else:
-            raise ValueError("Invalid size string")
+        raise ValueError("Invalid size string")
 
     @staticmethod
     def _timestamp() -> int:
@@ -80,7 +90,7 @@ class Logger:
         :param t:
         :return:
         """
-        total_s, remainder_ms = divmod(t, 1000)
+        total_s, _ = divmod(t, 1000)
         m, s = divmod(total_s, 60)
         h, m = divmod(m, 60)
         d, h = divmod(h, 24)
@@ -114,6 +124,11 @@ class Logger:
 
 
     def _enqueue_log(self, level_int, msg):
+        """
+        Enqueue log to be logged.
+        :param level_int:
+        :param msg:
+        """
         if not self.file_log and not self.console:
             return
 
@@ -129,18 +144,20 @@ class Logger:
 
             # flush immediate if buffer full
             if self._log_buf.is_full():
-                self.flush_logs()
+                self._flush_logs()
 
     def _enqueue_data(self, name, data_str):
-
+        """
+        Enqueue data to be logged.
+        :param name:
+        :param data_str:
+        """
         line = f"{self._timestamp()},{name},{data_str}\n"
         self._data_buf.put(line)
         if self._data_buf.is_full():
-            self.flush_data()
+            self._flush_data()
 
-
-
-    def flush_logs(self):
+    def _flush_logs(self):
         """Write buffered log lines to disk and rotate if needed. Small-chunk write only."""
         if not _file_exists(self.log_path):
             create_file(self.log_path)
@@ -156,7 +173,8 @@ class Logger:
         except OSError as e:
             print(f"Error writing to file: {e}")
 
-    def flush_data(self):
+    def _flush_data(self):
+        """Write buffered data lines to disk and rotate if needed."""
         if not _file_exists(self.data_path):
             create_file(self.data_path)
 
@@ -164,7 +182,7 @@ class Logger:
             return
 
         try:
-            with open(self.data_path, "a") as f:
+            with open(self.data_path, "a", encoding="utf-8") as f:
                 for i in self._data_buf:
                     f.write(i)
 
@@ -175,8 +193,8 @@ class Logger:
 
     def flush(self):
         """Flush both buffers"""
-        self.flush_logs()
-        self.flush_data()
+        self._flush_logs()
+        self._flush_data()
 
     def _rotate_if_needed(self, path):
         size = os.stat(path)[6] if len(os.stat(path)) > 6 else os.stat(path).st_size
@@ -201,50 +219,79 @@ class Logger:
                     dst = f"{path}.{i + 1}"
                     if _file_exists(src):
                             os.rename(src, dst)
-            except Exception as e:
+            except OSError as e:
                 print("[LOGGER] _rotate_if_needed Exception",e)
 
-    # -------------------------
-    # Public log API
-    # -------------------------
     def _should_log(self, level_int:int):
         return level_int <= self.level
 
-    def trace(self, msg=""):
+    def trace(self, msg="") -> None:
+        """
+        Log some trace information.
+        :param msg:
+        :return:
+        """
         if self._should_log(TRACE):
             self._enqueue_log(TRACE, msg)
 
-    def debug(self, msg=""):
+    def debug(self, msg="") -> None:
+        """
+        Log some debug information.
+        :param msg:
+        :return:
+        """
         if self._should_log(DEBUG):
             self._enqueue_log(DEBUG, msg)
 
-    def info(self, msg=""):
+    def info(self, msg="") -> None:
+        """
+        Log some information.
+        :param msg:
+        :return:
+        """
         if self._should_log(INFO):
             self._enqueue_log(INFO, msg)
 
-    def warn(self, msg=""):
+    def warn(self, msg="") -> None:
+        """
+        Log a warning.
+        :param msg:
+        :return:
+        """
         if self._should_log(WARN):
             self._enqueue_log(WARN, msg)
-            self.flush_logs()
+            self._flush_logs()
 
-    def error(self, msg=""):
+    def error(self, msg="") -> None:
+        """
+        Log a normal error.
+        :param msg:
+        :return:
+        """
         if self._should_log(ERROR):
             self._enqueue_log(ERROR, msg)
-            self.flush_logs()
+            self._flush_logs()
 
-    def fatal(self, msg=""):
+    def fatal(self, msg="") -> None:
+        """
+        Log a fatal error.
+        :param msg:
+        :return:
+        """
         if self._should_log(FATAL):
             self._enqueue_log(FATAL, msg)
-            self.flush_logs()
+            self._flush_logs()
 
-    def data(self, name, data_str):
-        # lightweight wrapper for application data entries
+    def data(self, name, data_str) -> None:
+        """
+        Log application data.
+        :param name:
+        :param data_str:
+        :return:
+        """
         self._enqueue_data(name, data_str)
 
-    # -------------------------
-    # modes & status
-    # -------------------------
-    def mode(self, mode_name="normal"):
+    def mode(self, mode_name="normal") -> None:
         """
         Change loging mode:
           - 'low'  -> WARN only, no overwrites
@@ -258,7 +305,11 @@ class Logger:
         elif mode_name == "normal":
             self.level = self._orig_level
 
-    def get_status(self):
+    def get_status(self) -> dict:
+        """
+        Return the current status of the logger.
+        :return: dict with current status (level, queue_len, data_queue_len, file_log, console)
+        """
         return {
             "level": self.level,
             "queue_len": len(self._log_buf),
@@ -280,7 +331,7 @@ def init_logger(level=INFO,buffer_size=5,max_file_size="64kb",console=True,file_
     :param max_rotations: The maximum number of log- / datafiles before the oldest is deleted
     :return:
     """
-    global _logger_instance
+    global _logger_instance # pylint: disable=global-statement
     if _logger_instance is None:
         cfg = get_config()
         _logger_instance = Logger(

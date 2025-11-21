@@ -1,12 +1,21 @@
-from machine import ADC as HWADC, Pin
-from uasyncio import sleep as async_sleep
+"""
+PicoCore V2 ADC Class
+
+This class provides a simple interface to the machines ADC (Analog-to-Digital Converter) Pins.
+"""
+
 from time import sleep
 import math
+from machine import ADC as HWADC, Pin
+from uasyncio import sleep as async_sleep
 
-from .Util import stats_from_samples
+from .util import stats_from_samples
 
 
 class ADC:
+    """
+    ADC Class for reading from ADC Pins
+    """
     def __init__(self, pin: int, vref: float = 3.3, scale: float = 1.0, offset: float = 0.0):
         """
         Initialize the ADC.
@@ -49,25 +58,25 @@ class ADC:
         """Return scaled, real-world value (e.g., temperature, light intensity)."""
         return self.voltage() * self._scale + self._offset
 
-    def _measure(self, type: str = "raw") -> float:
+    def _measure(self, _type: str = "raw") -> float:
         """
         Helper method for the sample methods to make type param usage easier.
         """
-        if type == "raw":
+        if _type == "raw":
             return self.raw()
-        elif type == "voltage":
+        if _type == "voltage":
             return self.voltage()
-        elif type == "real":
+        if _type == "real":
             return self.real()
-        else:
-            return float("nan")
 
-    def samples(self, n: int = 10, type: str = "raw", delay: float = 0.001) -> list[float]:
+        return float("nan")
+
+    def samples(self, n: int = 10, _type: str = "raw", delay: float = 0.001) -> list[float]:
         """
         Return list of n samples (optionally with delay).
 
         :param n: Number of samples to return
-        :param type: String of measurement method type can be "raw" | "real" | "voltage"
+        :param _type: String of measurement method type can be "raw" | "real" | "voltage"
         :param delay: Delay between samples in seconds
         :return: List of n samples
         """
@@ -75,14 +84,14 @@ class ADC:
         for _ in range(n):
             if delay:
                 sleep(delay)
-            data.append(self._measure(type))
+            data.append(self._measure(_type))
         return data
 
-    async def async_samples(self, n: int = 10, type: str = "raw", delay: float = 0.001) -> list[float]:
+    async def async_samples(self, n: int = 10, _type: str = "raw", delay: float = 0.001) -> list[float]: # pylint: disable=line-too-long
         """
         Return list of n samples (optionally with delay).
         :param n: Number of samples to return
-        :param type: String of measurement method type can be "raw" | "real" | "voltage"
+        :param _type: String of measurement method type can be "raw" | "real" | "voltage"
         :param delay: Delay between samples in seconds
         :return:  List of n samples
         """
@@ -90,34 +99,39 @@ class ADC:
         for _ in range(n):
             if delay:
                 await async_sleep(delay)
-            data.append(self._measure(type))
+            data.append(self._measure(_type))
         return data
 
-    def mean(self, n: int = 10, type: str = "raw", delay: float = 0.001) -> float:
+    def mean(self, n: int = 10, _type: str = "raw", delay: float = 0.001) -> float:
         """
         Mean wrapper for the samples function,hence the same parameters.
         :param n: Number of samples to gather and calculate for the average
-        :param type: String of measurement method; type can be "raw" | "real" | "voltage"
+        :param _type: String of measurement method; type can be "raw" | "real" | "voltage"
         :param delay: Delay between samples in seconds
         :return:  average of the gathered samples in set type
         """
-        readings = self.samples(n, type, delay)
+        readings = self.samples(n, _type, delay)
         return sum(readings) / len(readings)
 
-    async def async_mean(self, n: int = 10, type: str = "raw", delay: float = 0.001) -> float:
+    async def async_mean(self, n: int = 10, _type: str = "raw", delay: float = 0.001) -> float:
         """
         Mean wrapper for the async_samples function,hence the same parameters.
         :param n: Number of samples to gather and calculate for the average
-        :param type: String of measurement method; type can be "raw" | "real" | "voltage"
+        :param _type: String of measurement method; type can be "raw" | "real" | "voltage"
         :param delay: Delay between samples in seconds
         :return average of the gathered samples in set type
         """
-        readings = await self.async_samples(n, type, delay)
+        readings = await self.async_samples(n, _type, delay)
         avg_raw = sum(readings) / len(readings)
         return avg_raw
 
-    def _is_pin_connected_heuristics(self, samples: list[float | int], allow_saturation_tol_v=0.05, max_noise_v=0.02,
-                                     min_expected_v=None, max_expected_v=None) -> tuple[bool, dict]:
+    def _is_pin_connected_heuristics(self,
+                                     samples: list[float | int],
+                                     allow_saturation_tol_v=0.05,
+                                     max_noise_v=0.02,
+                                     min_expected_v=None,
+                                     max_expected_v=None) -> tuple[bool, dict]:
+
         cnt, mean, var, mn, mx = stats_from_samples(samples)
         if cnt == 0:
             return False, {"reason": "no_samples"}
@@ -230,4 +244,3 @@ class VoltageDivider(ADC):
         avg_raw = sum(readings) / len(readings)
         v = avg_raw * (self.r1 + self.r2) / self.r2
         return v
-

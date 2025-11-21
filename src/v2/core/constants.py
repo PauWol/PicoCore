@@ -1,3 +1,9 @@
+"""
+PicoCore V2 Constants
+
+This file contains all centralized constants used in the PicoCore V2.
+"""
+
 from micropython import const
 import ustruct
 

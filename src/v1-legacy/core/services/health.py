@@ -43,14 +43,14 @@ class SystemHealth:
         load = BOARD_CPU_LOAD()
 
         if load > 80:
-            get_logger().warn(CPU, f"CPU load at {load:.2f}% changing frequency","Health.py:46")
+            get_logger().warn(CPU, f"CPU load at {load:.2f}% changing frequency","health.py:46")
             setCPUFrequency("high")
             self._freq_change = True
         elif load > 50 and self._freq_change:
             setCPUFrequency("normal")
             self._freq_change = False
         elif load < 50 and not self._freq_change:
-            get_logger().info(CPU, f"CPU load at {load:.2f}% changing frequency","Health.py:53")
+            get_logger().info(CPU, f"CPU load at {load:.2f}% changing frequency","health.py:53")
             setCPUFrequency("low")
             self._freq_change = True
 
@@ -61,15 +61,15 @@ class SystemHealth:
         if ram_usage > 95:
             self._ram_change = True
             service_manager.mode("low")
-            get_logger().warn(RAM, f"RAM {ram_usage:.2f}% changing to low mode","Health.py:64")
+            get_logger().warn(RAM, f"RAM {ram_usage:.2f}% changing to low mode","health.py:64")
         elif ram_usage > 80:
             self._ram_change = True
             service_manager.mode("medium")
-            get_logger().info(RAM, f"RAM {ram_usage:.2f}% changing to medium mode","Health.py:68")
+            get_logger().info(RAM, f"RAM {ram_usage:.2f}% changing to medium mode","health.py:68")
         elif self._ram_change:
             self._ram_change = False
             service_manager.mode()
-            get_logger().info(RAM, f"RAM {ram_usage:.2f}% changing to normal mode","Health.py:72")
+            get_logger().info(RAM, f"RAM {ram_usage:.2f}% changing to normal mode","health.py:72")
 
     def _mem(self):
         """Check flash memory usage."""
@@ -78,15 +78,15 @@ class SystemHealth:
         if flash_usage > 80:
             self._mem_change = True
             get_logger().mode("low")
-            get_logger().warn(FLASH_MEM, f"Flash {flash_usage:.2f}% changing to low mode","Health.py:81")
+            get_logger().warn(FLASH_MEM, f"Flash {flash_usage:.2f}% changing to low mode","health.py:81")
         elif flash_usage > 70:
             self._mem_change = True
             get_logger().mode("medium")
-            get_logger().info(FLASH_MEM, f"Flash {flash_usage:.2f}% changing to medium mode","Health.py:85")
+            get_logger().info(FLASH_MEM, f"Flash {flash_usage:.2f}% changing to medium mode","health.py:85")
         elif self._mem_change:
             self._mem_change = False
             get_logger().mode()
-            get_logger().info(FLASH_MEM, f"Flash {flash_usage:.2f}% changing to normal mode","Health.py:89")
+            get_logger().info(FLASH_MEM, f"Flash {flash_usage:.2f}% changing to normal mode","health.py:89")
 
     @staticmethod
     def _error():
@@ -95,18 +95,18 @@ class SystemHealth:
             return
 
         if error_count >= 30:
-            get_logger().warn(OVERFLOW, f"Error count limit reached {error_count}, restarting system","Health.py:98")
+            get_logger().warn(OVERFLOW, f"Error count limit reached {error_count}, restarting system","health.py:98")
             get_logger().cleanup()
             RESET()
 
         elif error_count >= 20:
-            get_logger().info(OVERFLOW, f"Too many unresolved errors {error_count}, resetting services","Health.py:103")
+            get_logger().info(OVERFLOW, f"Too many unresolved errors {error_count}, resetting services","health.py:103")
             service_manager.reset()
             service_manager.startAll()
             reset_error_count_since_boot()
 
         elif error_count >= 10:
-            get_logger().info(OVERFLOW, f"Attention {error_count} unresolved errors, restarting services","Health.py:109")
+            get_logger().info(OVERFLOW, f"Attention {error_count} unresolved errors, restarting services","health.py:109")
             service_manager.restartAll()
             reset_error_count_since_boot()
 
@@ -128,7 +128,7 @@ class SystemHealth:
         self.timer = Timer()
 
         self.timer.init(period=self.interval, mode=Timer.PERIODIC, callback=self._check)
-        get_logger().debug(SERVICE_START, "Health started","Health.py:131")
+        get_logger().debug(SERVICE_START, "Health started","health.py:131")
 
     def stop(self):
         if self._is_running:
@@ -136,7 +136,7 @@ class SystemHealth:
 
             if self.timer:
                 self.timer.deinit()
-                get_logger().debug(SERVICE_STOP, "Health stopped","Health.py:136")
+                get_logger().debug(SERVICE_STOP, "Health stopped","health.py:136")
 
 if __name__ == "__main__":
     try:

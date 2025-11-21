@@ -1,12 +1,11 @@
 from uasyncio import sleep as async_sleep, create_task
-from time import ticks_ms,ticks_diff
-from machine import lightsleep , deepsleep,Pin
+from time import ticks_ms,ticks_diff,ticks_add
+from machine import lightsleep
 from ..queue import RingBuffer
 from ..config import get_config
-from ..constants import POWER_MONITOR_ENABLED,SLEEP_INTERVAL, EVENT_ROOT_LOOP_BOOT, EVENT_ROOT_LOOP_BOOT_BEFORE, EVENT_ROOT_LOOP_BOOT_AFTER
+from ..constants import POWER_MONITOR_ENABLED,SLEEP_INTERVAL, EVENT_ROOT_LOOP_BOOT_BEFORE, EVENT_ROOT_LOOP_BOOT_AFTER
 from ..logging import logger
-from .Bus import emit , on
-from ..io import Led
+from .bus import emit
 from ..util import boot_flag_task
 import uasyncio
 
@@ -71,11 +70,11 @@ class Task:
         raise ValueError(f"Invalid interval format {interval}, should be int (ms) or str with 'ms' , 's' or 'h' suffix")
 
     def should_run(self,now:int) -> bool:
-        return self.enabled and (ticks_diff(now , self.last_run)) >= self.interval
+        return self.enabled and ticks_diff(now, self.next_run) >= 0
 
     def run(self,now:int):
         self.last_run = now
-        self.next_run = self.last_run + self.interval
+        self.next_run = ticks_add(self.last_run , self.interval)
         self.callback()
 
         if self.boot:
@@ -83,7 +82,8 @@ class Task:
 
     async def run_async(self,now:int):
         self.last_run = now
-        self.next_run = self.last_run + self.interval
+        self.next_run = ticks_add(self.last_run, self.interval)
+
         await self.callback()
 
         if self.boot:
@@ -175,8 +175,7 @@ class Root:
         This method puts the microcontroller to sleep.
         :return: None
         """
-        led = Led("LED", Pin.OUT)
-        if self.power_monitor and True==False: #TODO: Remove this line,for testing only
+        if self.power_monitor:
             lightsleep(self._min_sleep_time)
         # TODO: Add deepsleep support with state saving
             if self.dynamic_sleep:
@@ -228,7 +227,10 @@ class Root:
                         _task.run(now)
 
                 if self.dynamic_sleep:
-                    self._time_proposal_buffer.put(ticks_diff(_task.next_run,now)) #TODO: Review this line
+                    t = ticks_diff(_task.next_run,now)
+                    if t < 0:
+                        t = 0
+                    self._time_proposal_buffer.put(t)
             await self.sleep()
 
     def run(self):

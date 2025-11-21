@@ -1,5 +1,12 @@
+"""
+PicoCore V2 io.Util Class
 
-def stats_from_samples(self, samples:list[float]) -> tuple[int, float, float, float, float]:
+This class provides a class for utility functions used by io classes.
+"""
+
+def stats_from_samples(samples:list[float]) \
+        -> (tuple[int, float, float, float, float]|
+            tuple[int, None, None, None, None]):
     """Return (count, mean, var, minv, maxv). var is population variance."""
     if not samples:
         return 0, None, None, None, None
