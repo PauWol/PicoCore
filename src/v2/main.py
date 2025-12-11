@@ -1,28 +1,14 @@
-from core import start,task, ONBOARD_LED
-from core.logging import logger
-from core.io import VoltageDivider, Led
-from machine import Pin
-import dht
+from core import start
 
-led = Led(ONBOARD_LED,Pin.OUT)
-dt = dht.DHT11(Pin(1))
-vd = VoltageDivider(28,10_000,5_100)
+from core.comms.mesh.main import Mesh
 
-@task("10min")
-async def measure():
-    dt.measure()
-    temp , hum = dt.temperature() , dt.humidity()
-    vol = await vd.async_mean_real_voltage(20)
-    logger().data("",f"{temp},{hum},{vol}")
+def cbl(host, msg):
+    print(f"{host}: {msg}")
 
-@task("10min")
-async def blink():
-    await led.async_blink(2,1)
+mesh = Mesh()
+mesh.hello()
+mesh.callback(cbl)
+mesh.receive(None)
 
-@task("",boot=True,parallel=True)
-async def blink():
-    await led.async_blink(4,1)
 
 start()
-
-

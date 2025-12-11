@@ -27,6 +27,7 @@ from . import logging
 from . import constants
 from .util import (version , uuid , uptime , _file_exists , BOOT_FLAG ,
                    _remove_boot_flag , _create_boot_flag,ONBOARD_LED)
+from .comms import crc8
 
 __all__ = ['version', 'uuid','root','init','uptime','io','logging',
            'constants','config','task','on','bus','emit','manual',

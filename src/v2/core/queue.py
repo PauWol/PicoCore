@@ -76,6 +76,23 @@ class RingBuffer:
         finally:
             _enable_irq(irq_state)
 
+    def put_index(self, index: int, item: object) -> None:
+        """Insert item at specific index (0 is oldest).
+        If index is out of bounds, raises IndexError.
+        """
+        if index < 0 or index > self._count:
+            raise IndexError("Index out of range")
+            
+        irq_state = _disable_irq()
+        try:
+            # Calculate the actual position in the circular buffer
+            pos = (self._tail + index) % self._cap
+
+            # Insert the new item
+            self._buf[pos] = item
+        finally:
+            _enable_irq(irq_state)
+
     def put_list(self, items: list[object]) -> None:
         """Push multiple items until the buffer is full (or all items consumed)."""
         for item in items:
@@ -137,6 +154,33 @@ class RingBuffer:
             self._head = 0
             self._tail = 0
             self._count = 0
+        finally:
+            _enable_irq(irq_state)
+
+    def clear_index(self, index: int) -> None:
+        """Remove item at index (0 is oldest).
+        If index is out of bounds, raises IndexError.
+        """
+        if index < 0 or index >= self._count:
+            raise IndexError("Index out of range")
+
+        irq_state = _disable_irq()
+        try:
+            pos = (self._tail + index) % self._cap
+
+            # Shift elements to fill the gap
+            for i in range(index, self._count - 1):
+                curr_pos = (self._tail + i) % self._cap
+                next_pos = (self._tail + i + 1) % self._cap
+                self._buf[curr_pos] = self._buf[next_pos]
+
+            # Clear the last position and update pointers
+            last_pos = (self._tail + self._count - 1) % self._cap
+            self._buf[last_pos] = None
+            self._count -= 1
+
+            # Update head pointer
+            self._head = (self._head - 1) % self._cap if self._count > 0 else 0
         finally:
             _enable_irq(irq_state)
 
