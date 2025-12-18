@@ -139,7 +139,7 @@ def uuid(byte: bool = False) -> bytes | str:
 
     return machine.unique_id().hex()
 
-def version() -> tuple[str, str]:
+def version() -> list[str]:
     """
     Get the current version of PicoCore.
 
@@ -147,9 +147,10 @@ def version() -> tuple[str, str]:
             versioning format (e.g., ["2.0.0" , "1.26.1"] ).
     :raises ValueError: If the version file could not be read.
     """
-    if os.stat("./.version").st_size >= 13:
-        with open("./.version", "r",encoding="utf-8") as version_file:
-            return version_file.read().strip().split("\n")
+    _v_path = "/core/.version"
+    if os.stat(_v_path)[6] >= 13:
+        with open(_v_path, "r",encoding="utf-8") as version_file:
+            return version_file.read().strip().replace("\r", "").split("\n")
     else:
         raise ValueError("Version file could not be read."
                          "Please check if the file exists and is not empty.")
