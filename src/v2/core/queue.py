@@ -82,7 +82,7 @@ class RingBuffer:
         """
         if index < 0 or index > self._count:
             raise IndexError("Index out of range")
-            
+
         irq_state = _disable_irq()
         try:
             # Calculate the actual position in the circular buffer
@@ -166,8 +166,6 @@ class RingBuffer:
 
         irq_state = _disable_irq()
         try:
-            pos = (self._tail + index) % self._cap
-
             # Shift elements to fill the gap
             for i in range(index, self._count - 1):
                 curr_pos = (self._tail + i) % self._cap

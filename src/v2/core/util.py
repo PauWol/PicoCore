@@ -11,8 +11,6 @@ import machine
 import uasyncio as asyncio
 from .constants import BOOT_FLAG, BOOT_WINDOW_MS
 
-
-
 def _file_exists(name):
     try:
         return name in os.listdir()
@@ -139,7 +137,7 @@ def uuid(byte: bool = False) -> bytes | str:
 
     return machine.unique_id().hex()
 
-def version() -> list[str]:
+def version() -> list[str]|None:
     """
     Get the current version of PicoCore.
 
@@ -148,10 +146,11 @@ def version() -> list[str]:
     :raises ValueError: If the version file could not be read.
     """
     _v_path = "/core/.version"
-    if os.stat(_v_path)[6] >= 13:
-        with open(_v_path, "r",encoding="utf-8") as version_file:
-            return version_file.read().strip().replace("\r", "").split("\n")
-    else:
+    try:
+        if os.stat(_v_path)[6] >= 13:
+            with open(_v_path, "r",encoding="utf-8") as version_file:
+                return version_file.read().strip().replace("\r", "").split("\n")
+    except OSError:
         raise ValueError("Version file could not be read."
                          "Please check if the file exists and is not empty.")
 
@@ -164,18 +163,12 @@ def get_onboard_led() -> int | str:
     """
     platform = sys.platform
 
-    # -------------------------
-    # Raspberry Pi Pico / Pico W
-    # -------------------------
     if platform.startswith("rp2"):              # Pi Pico
         try:
             return "LED"
         except Exception as e:
             raise RuntimeError("Pico LED not available") from e
 
-    # -------------------------
-    # ESP32 family
-    # -------------------------
     if platform.startswith("esp32"):            # ESP32, ESP32-C3, S2, S3
         candidate_pins = (2, 8, 19, 38)         # common boards
 
@@ -185,13 +178,9 @@ def get_onboard_led() -> int | str:
                 p.value(1)                      # test LED ON
                 p.value(0)                      # OFF
                 return pin
-            except Exception:
+            except (ValueError, OSError) :
                 pass
 
-
-    # -------------------------
-    # Other systems
-    # -------------------------
     raise RuntimeError("Unsupported platform: " + platform)
 
 ONBOARD_LED: str | int | None = get_onboard_led()

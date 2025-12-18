@@ -38,8 +38,10 @@ class Config:
         :param path: The path to the config file.
         """
         self.path = path
-        self.file_object: dict[str, dict[str, object]] = {}  # structure: { "Class": {key:val, "sub": { ... }}}
-        self.current_class: tuple[str, str, bool] | tuple[None,None,bool] = (None, None, False)  # (class, subclass, is_sub)
+        self.file_object: dict[str, dict[str, object]] = {}
+        # structure: { "Class": {key:val, "sub": { ... }}}
+        self.current_class: tuple[str, str, bool] | tuple[None,None,bool] \
+        = (None, None, False)  # (class, subclass, is_sub)
         self.subclasses: dict[str, set[str]] = {}  # record of subclasses per class -> set(...)
         self._parse()
 
