@@ -342,5 +342,43 @@ class Mesh:
 
         return _result if result and _result else None
 
+    def receive_nonblocking(self, result: bool = False) -> list[tuple[
+        bytes | bytearray | None, bytes | bytearray | None]] | None:
+        """
+        Non-blocking receive: process any waiting packets and return immediately.
+        """
+        self.start()
+
+        _result = [] if result else None
+
+        poller = select.poll()
+        poller.register(self._esp, select.POLLIN)
+
+        events = poller.poll(0)
+        if not events:
+            return _result if result else None
+
+        while events:
+            host, msg = self._esp.irecv()
+            if host or msg:
+                if result:
+                    _result.append((host, msg))
+
+                try:
+                    self._irq(host, msg)
+                except Exception as err:
+                    logger().error(f"Mesh IRQ error: {err}")
+
+                if self._on_recv:
+                    try:
+                        self._on_recv(host, msg)
+                    except Exception as err:
+                        logger().error(f"Mesh receive callback error: {err}")
+
+            # poll again to process remaining messages
+            events = poller.poll(0)
+
+        return _result if result else None
+
     def state(self):
         pass
