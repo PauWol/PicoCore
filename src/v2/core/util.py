@@ -150,9 +150,12 @@ def version() -> list[str]|None:
         if os.stat(_v_path)[6] >= 13:
             with open(_v_path, "r",encoding="utf-8") as version_file:
                 return version_file.read().strip().replace("\r", "").split("\n")
-    except OSError:
+        else:
+            raise ValueError("Version file could not be read."
+                             "Please check if the file exists and is not empty.")
+    except OSError as e:
         raise ValueError("Version file could not be read."
-                         "Please check if the file exists and is not empty.")
+                         "Please check if the file exists and is not empty.") from e
 
 
 

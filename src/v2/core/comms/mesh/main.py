@@ -4,16 +4,20 @@ PicoCore V2 Comms Mesh Main
 This module provides the PicoCore V2 Comms Mesh main class.
 """
 
+import time
+import uselect as select
 from network import WLAN, STA_IF
 from espnow import ESPNow
-from ..constants import MAX_NEIGHBORS, MESH_TYPE_HELLO, MESH_TYPE_HELLO_ACK, BROADCAST_ADDR, DEFAULT_TTL, MESH_FLAG_UNSECURE, \
-    MESH_FLAG_BCAST, MESH_FLAG_ACK, UNDEFINED_NODE_ID, BROADCAST_ADDR_MAC, MESH_FLAG_UNICAST
+from ..constants import (MAX_NEIGHBORS, MESH_TYPE_HELLO, MESH_TYPE_HELLO_ACK,
+                        BROADCAST_ADDR, DEFAULT_TTL, MESH_FLAG_UNSECURE, \
+                        MESH_FLAG_BCAST, MESH_FLAG_ACK, UNDEFINED_NODE_ID,
+                         BROADCAST_ADDR_MAC, MESH_FLAG_UNICAST
+                         )
 from ..mesh import RingBuffer, logger
 from .packets import build_packet, parse_packet
-import time
-import select
 
-class Mesh:
+
+class Mesh: # pylint: disable=too-many-instance-attributes
     """
     PicoCore V2 Comms Mesh Main Class
     """
@@ -97,14 +101,14 @@ class Mesh:
 
             if timeout.endswith("ms"):
                 return int(timeout[:-2])
-            elif timeout.endswith("s"):
+            if timeout.endswith("s"):
                 return int(timeout[:-1]) * 1000
-            elif timeout.endswith("min"):
+            if timeout.endswith("min"):
                 return int(timeout[:-3]) * 1000 * 60
-            elif timeout.endswith("h"):
+            if timeout.endswith("h"):
                 return int(timeout[:-1]) * 1000 * 60 * 60
-            else:
-                raise ValueError("Invalid timeout format")
+
+            raise ValueError("Invalid timeout format")
 
         return int(timeout * 1000)
 
@@ -117,7 +121,9 @@ class Mesh:
         :return:
         """
         if not self._started:
-            raise RuntimeError("Mesh needs to be started before sending packets! Use start() to start.")
+            raise RuntimeError("Mesh needs to be started before "
+                               "sending packets! Use start() to start."
+                               )
 
         self._add(addr)
 
@@ -166,8 +172,9 @@ class Mesh:
         self._up_sequence()
 
         # Build hello packet
-        return build_packet(MESH_TYPE_HELLO, self.node_id(), BROADCAST_ADDR, self._sequence, 1,
-                            MESH_FLAG_BCAST | MESH_FLAG_ACK | MESH_FLAG_UNSECURE, b""), BROADCAST_ADDR_MAC
+        return build_packet(MESH_TYPE_HELLO, self.node_id(), BROADCAST_ADDR,
+                            self._sequence, 1,MESH_FLAG_BCAST | MESH_FLAG_ACK
+                            | MESH_FLAG_UNSECURE, b""), BROADCAST_ADDR_MAC
 
     def _hello_ack(self, host: bytes | bytearray) -> bytearray:
         """
@@ -180,7 +187,11 @@ class Mesh:
         self._up_sequence()
 
         # Build hello ack packet
-        return build_packet(MESH_TYPE_HELLO_ACK, self.node_id(), self.node_id(host), self._sequence, 1, MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE, b"")
+        return build_packet(MESH_TYPE_HELLO_ACK, self.node_id(),
+                            self.node_id(host), self._sequence,
+                            1, MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE,
+                            b""
+                            )
 
     def node_id(self, host: bytes | bytearray= None) -> int:
         """
@@ -276,7 +287,8 @@ class Mesh:
     def callback(self, callback) -> None:
         """
         Register a callback function to be called when a packet is received.
-        Note: The callback function should have the signature: callback(host, msg) or callback(*args)
+        Note: The callback function should have the signature: callback(host, msg)
+        or callback(*args)
         :param callback:
         :return:
         """
@@ -328,14 +340,14 @@ class Mesh:
 
             try:
                 self._irq(host, msg)
-            except Exception as err:
+            except Exception as err: # pylint: disable=broad-exception-caught
                 logger().error(f"Mesh IRQ error: {err}")
 
             # call registered callback
             if self._on_recv:
                 try:
                     self._on_recv(host, msg)
-                except Exception as err:
+                except Exception as err: # pylint: disable=broad-exception-caught
                     logger().error(f"Mesh receive callback error: {err}")
 
         self.stop()
@@ -366,13 +378,13 @@ class Mesh:
 
                 try:
                     self._irq(host, msg)
-                except Exception as err:
+                except Exception as err: # pylint: disable=broad-exception-caught
                     logger().error(f"Mesh IRQ error: {err}")
 
                 if self._on_recv:
                     try:
                         self._on_recv(host, msg)
-                    except Exception as err:
+                    except Exception as err: # pylint: disable=broad-exception-caught
                         logger().error(f"Mesh receive callback error: {err}")
 
             # poll again to process remaining messages
@@ -381,4 +393,8 @@ class Mesh:
         return _result if result else None
 
     def state(self):
-        pass
+        """
+        Return the state of the mesh.For now only True or False if mesh is started or not.
+        :return:
+        """
+        return self._started

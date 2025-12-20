@@ -8,7 +8,7 @@ import ustruct as struct
 from ..constants import BASE_HEADER_FORMAT_NO_CRC, BASE_HEADER_SIZE_NO_CRC, MESH_VERSION
 from ..crc8 import append_crc8_to_bytearray , verify_crc8
 
-def build_packet(ptype: int, src: int, dst: int, seq: int,
+def build_packet(ptype: int, src: int, dst: int, seq: int, # pylint: disable=too-many-arguments,too-many-positional-arguments
                  ttl: int, flags: int, payload: bytes) -> bytearray:
     """
     Build a mesh packet.
@@ -68,11 +68,11 @@ def parse_packet(packet: bytes) -> tuple[int, int, int, int, int, int, int, int,
     _header = _header_crc8[:-1]
     _payload = packet[BASE_HEADER_SIZE_NO_CRC + 1:]
 
-    _version, _ptype, _src, _dst, _seq, _ttl, _flags, _plen = struct.unpack(BASE_HEADER_FORMAT_NO_CRC, _header)
+    _version, _ptype, _src, _dst, _seq, _ttl, _flags, _plen \
+    = struct.unpack(BASE_HEADER_FORMAT_NO_CRC, _header)
 
     # Other checks
     if not _checks(_version,_plen,len(_payload)):
         return None
 
     return _version, _ptype, _src, _dst, _seq, _ttl, _flags, _plen, _payload
-
