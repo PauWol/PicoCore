@@ -3,7 +3,7 @@
   <h1 style="display: inline-block; vertical-align: middle;">PicoCore</h1>
 </div>
 
-PicoCore is a lightweight **MicroPython-based runtime and API** for the Raspberry Pi Pico and Pico W. It provides a modular foundation to build embedded projects like weather stations, rovers, or automation devices with ease and efficiency.
+PicoCore is a lightweight **MicroPython-based runtime and API** for the Raspberry Pi Pico, Pico W and Esp32. It provides a modular foundation to build embedded projects like weather stations, rovers, or automation devices with ease and efficiency.
 
 ## 🚀 Features
 
