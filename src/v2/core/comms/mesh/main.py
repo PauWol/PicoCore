@@ -3,7 +3,6 @@ PicoCore V2 Comms Mesh Main
 
 This module provides the PicoCore V2 Comms Mesh main class.
 """
-# TODO: Fix async receive and send flow peer not registered after hello
 import time
 import uselect as select
 from network import WLAN, STA_IF
@@ -187,6 +186,14 @@ class Mesh: # pylint: disable=too-many-instance-attributes
             if _flags & MESH_FLAG_ACK:
                 print("ACK")
                 await self.async_hello_ack(host)
+
+        if _ptype == MESH_TYPE_DATA:
+            try:
+                # (mac,node_id),(_payload)
+                await self._on_recv((host,_src),_payload)
+
+            except Exception as e:
+                logger().error(f"Mesh receive error in callback: {e}")
 
     def _add(self, mac: bytes|bytearray|str) -> None:
         """
@@ -453,6 +460,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         if not self._started:
             return
 
+        self.rx_disable()
         self._esp.active(False)
         self._wlan.active(False)
 
@@ -499,96 +507,15 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         """
         Register a callback function to be called when a packet is received.
         Note: The callback function should have the signature: callback(host, msg)
-        or callback(*args)
+        or callback(*args).
+
+        - host: tuple -> (mac,node_id)
+        - msg: bytes|bytearray -> payload
+
         :param callback:
         :return:
         """
         self._on_recv = callback
-
-    def receive(self, timeout: float | None = 0, result: bool = False) -> list[tuple[
-        bytes | bytearray | None, bytes | bytearray | None]] | None:
-        """
-        Receive packets for given timeout (float seconds) or infinite if timeout is None.
-        If result is True return a list of (host, msg) tuples.
-        """
-        self.start()
-
-        _poll_timeout = self._convert_receive_timeout(timeout)  # milliseconds or -1 for infinite
-        _start = time.ticks_ms()
-
-        _result = [] if result else None
-
-        # create poller once
-        poller = select.poll()
-        poller.register(self._esp, select.POLLIN)
-
-        # Helper to compute remaining timeout per poll call (ms)
-        def remaining_ms():
-            if _poll_timeout == -1:
-                return -1
-            elapsed = time.ticks_diff(time.ticks_ms(), _start)  # elapsed ms
-            rem = _poll_timeout - elapsed
-            return rem if rem > 0 else 0
-
-        while True:
-            rt = remaining_ms()
-            # If not infinite and time is up -> break
-            if _poll_timeout != -1 and rt == 0:
-                break
-
-            events = poller.poll(rt)
-
-            if not events:
-                continue
-
-            host, msg = self._esp.irecv()
-
-            if not host and not msg:
-                continue
-
-            if result:
-                _result.append((host, msg))
-
-            try:
-                self._irq(host, msg)
-            except Exception as err: # pylint: disable=broad-exception-caught
-                logger().error(f"Mesh IRQ error: {err}")
-
-            # call registered callback
-            if self._on_recv:
-                try:
-                    self._on_recv(host, msg)
-                except Exception as err: # pylint: disable=broad-exception-caught
-                    logger().error(f"Mesh receive callback error: {err}")
-
-        self.stop()
-
-        return _result if result and _result else None
-
-    def _receive_nonblocking(self, result: bool = False):
-        _result = [] if result else None # TODO: FIx this method
-
-        while True and self._started:
-            host, msg = self._esp.irecv()
-            if not host and not msg:
-                break
-
-            if result:
-                _result.append((host, msg))
-
-            try:
-                self._irq(host, msg)
-            except Exception as err:
-                logger().error(f"Mesh IRQ error: {err}")
-
-            if self._on_recv:
-                try:
-                    self._on_recv(host, msg)
-                except Exception as err:
-                    logger().error(f"Mesh receive callback error: {err}")
-
-        return _result if result else None
-
 
     async def receive_task(self):
         """
@@ -610,28 +537,6 @@ class Mesh: # pylint: disable=too-many-instance-attributes
                 logger().error(f"mesh rx error: {e}")
                 await asyncio.sleep_ms(20)
 
-    async def _async_receive(self):
-        if not self._started:
-            return
-
-        while True:
-            host, msg = self._esp.irecv()
-
-            # nothing waiting → exit immediately
-            if not host and not msg:
-                return
-
-            try:
-                await self._irq(host, msg)
-            except Exception as err:
-                logger().error(f"Mesh IRQ error: {err}")
-
-            if self._on_recv:
-                try:
-                    self._on_recv(host, msg)
-                except Exception as err:
-                    logger().error(f"Mesh receive callback error: {err}")
-
     def stats(self):
         """
         Return mesh statistics.
@@ -652,3 +557,21 @@ def mesh() -> Mesh:
         _mesh = Mesh()
     return _mesh
 
+
+def mesh_callback():
+    """
+    Decorator to set the mesh callback function.
+    Register a callback function to be called when a packet is received.
+
+    Note: The callback function should have the signature: callback(host, msg) or callback(*args).
+
+    - More info on https://pauwol.github.io/PicoCore/api/overview/ #TODO: Change to right URL.
+    - host: tuple -> (mac,node_id)
+    - msg: bytes|bytearray -> payload
+
+    :return:
+    """
+    def deco(fn):
+        mesh().callback(fn)
+        return fn
+    return deco
