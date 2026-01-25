@@ -135,7 +135,7 @@ class RingBuffer:
             raise IndexError("peek from empty buffer")
         return self.peek(self._count - 1)
 
-    def extend(self, iterable: list[object]) -> None:
+    def extend(self, iterable: list[object]|tuple[object]) -> None:
         """Push multiple items until the buffer is full (or all items consumed)."""
         for it in iterable:
             try:
@@ -212,6 +212,20 @@ class RingBuffer:
             out.append(self._buf[idx])
             idx = self._inc(idx)
         return out
+
+    def to_tuple(self) -> tuple[object]:
+        """
+        Return elements in order as a tuple (allocates).
+        :return:
+        """
+        out: tuple = ()
+        idx = self._tail
+        for _ in range(self._count):
+            out += (self._buf[idx],)
+            idx = self._inc(idx)
+        return out
+
+
 
     def __iter__(self): # type: ignore
         """Return iterator over elements in order."""

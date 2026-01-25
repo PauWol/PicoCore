@@ -44,6 +44,8 @@ LOGGER_CONSOLE = const("system.logger.log_to_console")
 LOGGER_FILE_LOG = const("system.logger.log_to_file")
 LOGGER_MAX_ROTATIONS = const("system.logger.max_rotations")
 
+MESH_ENABLED = const("comms.mesh.enabled")
+
 
 SLEEP_INTERVAL = const("system.runtime.interval")
 # root rules
@@ -104,3 +106,7 @@ LEVEL_BYTES = {
 # File paths
 LOG_FILE_PATH = const("logs.bin")
 DATA_FILE_PATH = const("data.txt")
+
+# Data logging csv part
+
+MAX_KEYS = const(32)

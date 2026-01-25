@@ -5,8 +5,34 @@ This module provides utility functions for the PicoCore V2 Comms Mesh module.
 """
 
 import ustruct as struct
-from ..constants import BASE_HEADER_FORMAT_NO_CRC, BASE_HEADER_SIZE_NO_CRC, MESH_VERSION
+from ..constants import BASE_HEADER_FORMAT_NO_CRC, BASE_HEADER_SIZE_NO_CRC, MESH_VERSION, MAX_PAYLOAD_SIZE
 from ..crc8 import append_crc8_to_bytearray , verify_crc8
+
+def payload_conv(payload: str|bytes|bytearray,_iter:bool=False):
+    """
+    Convert payload to bytes.
+    :param payload:
+    :param _iter: If True, return a generator for large payloads (>MAX_PAYLOAD_SIZE=239)
+    :return: bytes or generator
+    """
+    _p = b""
+    if isinstance(payload,str):
+        _p = payload.encode()
+    if isinstance(payload,bytearray):
+        _p = payload
+    else:
+        _p = payload
+
+    if len(_p) > MAX_PAYLOAD_SIZE and not _iter:
+        raise ValueError("Payload too large")
+
+    if _iter:
+        for i in range(0,len(_p),MAX_PAYLOAD_SIZE):
+            yield _p[i:i+MAX_PAYLOAD_SIZE]
+
+    return _p
+
+
 
 def build_packet(ptype: int, src: int, dst: int, seq: int, # pylint: disable=too-many-arguments,too-many-positional-arguments
                  ttl: int, flags: int, payload: bytes) -> bytearray:

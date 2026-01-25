@@ -6,5 +6,5 @@ This module provides functions for mesh communication (ESP-Only).
 """
 from .. import RingBuffer
 from .. import logger
-from .main import Mesh
+from .main import mesh
 from .packets import build_packet, parse_packet

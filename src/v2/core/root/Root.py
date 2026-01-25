@@ -3,11 +3,13 @@ from time import ticks_ms,ticks_diff,ticks_add
 from machine import lightsleep
 from ..queue import RingBuffer
 from ..config import get_config
-from ..constants import POWER_MONITOR_ENABLED,SLEEP_INTERVAL, EVENT_ROOT_LOOP_BOOT_BEFORE, EVENT_ROOT_LOOP_BOOT_AFTER
+from ..constants import POWER_MONITOR_ENABLED,SLEEP_INTERVAL, EVENT_ROOT_LOOP_BOOT_BEFORE, EVENT_ROOT_LOOP_BOOT_AFTER,MESH_ENABLED
 from ..logging import logger
 from .bus import emit
 from ..util import boot_flag_task
+from ..comms.mesh import mesh
 import uasyncio
+import sys
 
 """
 SYSTEM   = 0
@@ -69,10 +71,23 @@ class Task:
                 raise ValueError("Invalid interval format")
         raise ValueError(f"Invalid interval format {interval}, should be int (ms) or str with 'ms' , 's' or 'h' suffix")
 
-    def should_run(self,now:int) -> bool:
-        return self.enabled and ticks_diff(now, self.next_run) >= 0
+    def should_run(self, now: int) -> bool:
+        """
+        Check if the task should run based on its interval.
+        :param now: Current time in ticks
+        :return: True if the task should run, False otherwise
+        """
+        if not self.enabled:
+            return False
+        if self.interval == 0:
+            return False  # async/event-driven only
+        return ticks_diff(now, self.next_run) >= 0
 
     def run(self,now:int):
+        """
+        Run the task.
+        :param now: Current time in ticks
+        """
         self.last_run = now
         self.next_run = ticks_add(self.last_run , self.interval)
         self.callback()
@@ -96,7 +111,10 @@ class Root:
         # Interval for async sleep in main loop
         self.sleep_interval = self.conf.get(SLEEP_INTERVAL) or 0.1
         self.power_monitor = self.conf.get(POWER_MONITOR_ENABLED) or False
+        self.mesh = self.conf.get(MESH_ENABLED) and sys.platform.startswith("esp32") or False
         self.dynamic_sleep = False
+
+
 
         self._boot_tasks = []
         self._tasks = []
@@ -106,13 +124,26 @@ class Root:
 
         # time for actual light- or later deepsleep
         self._min_sleep_time = 100 # ms
+
+        logger().debug(self.__repr__())
         self._init_system_tasks()
+
+    def __repr__(self):
+        """
+        Return a string representation of the root scheduler.
+        :return: String representation of the root scheduler
+        """
+        return f"Root(props={self.__dict__})"
 
 
     def _init_system_tasks(self):
 
         # boot flag task
         self.add(Task("boot_flag_task",boot_flag_task,boot=True,priority=0,enabled=True,parallel=True))
+
+        if self.mesh:
+            # mesh task: receive_task
+            self.add(Task("mesh_receive_task",callback=mesh().receive_task,async_task=True,priority=0,enabled=True,parallel=True,boot=True))
 
     def add(self, _task:Task):
         """
@@ -137,13 +168,20 @@ class Root:
         self._boot_tasks.sort(key=lambda x: x.priority)
         self._tasks.sort(key=lambda x: x.priority)
 
-        if self.power_monitor and self._tasks:
-            # Set sleep interval to the minimum interval of all tasks must be >= 100 ms.
-            t =  min([t.interval for t in self._tasks])
-            self._min_sleep_time = t if t > self._min_sleep_time else self._min_sleep_time
+        if self.power_monitor:
+            timed_tasks = [t for t in self._tasks if t.interval > 0]
 
-            if all(_task.interval % t == 0 for _task in self._tasks):
+            if not timed_tasks:
+                self.dynamic_sleep = False
+                return
+
+            t = min(_task.interval for _task in timed_tasks)
+            self._min_sleep_time = max(t, self._min_sleep_time)
+
+            if all(_task.interval % t == 0 for _task in timed_tasks):
                 self.dynamic_sleep = True
+            else:
+                self.dynamic_sleep = False
 
                 #TODO: Maybe add else = false
 
@@ -172,18 +210,26 @@ class Root:
 
     async def sleep(self):
         """
-        This method puts the microcontroller to sleep.
-        :return: None
+        This method puts the microcontroller to sleep according to the state of the system.
+        :return:
         """
+
+        # If mesh expects traffic, do NOT deep/light sleep
+        if self.mesh and mesh().rx_expected():
+            # short cooperative sleep only
+            await async_sleep(self.sleep_interval)
+            return
+
         if self.power_monitor:
             lightsleep(self._min_sleep_time)
-        # TODO: Add deepsleep support with state saving
+
             if self.dynamic_sleep:
                 self._min_sleep_time = min(self._time_proposal_buffer)
                 self._time_proposal_buffer.clear()
+
+            # TODO: Add deepsleep support with state saving
         else:
             await async_sleep(self.sleep_interval)
-
 
     async def boot(self):
         """
@@ -193,7 +239,11 @@ class Root:
         emit(EVENT_ROOT_LOOP_BOOT_BEFORE,"")
         now = ticks_ms()
         for _task in self._boot_tasks:
-            if _task.async_task:
+            # create background async tasks for parallel ones
+            if _task.async_task and _task.parallel:
+                create_task(_task.run_async(now))
+            elif _task.async_task:
+                # synchronous await for async tasks that should run before boot continues
                 await _task.run_async(now)
             elif _task.parallel:
                 create_task(_task.run_async(now))
@@ -217,6 +267,7 @@ class Root:
 
         while self.running:
             now = ticks_ms()
+
             for _task in self._tasks:
                 if _task.should_run(now):
                     if _task.async_task:
@@ -245,8 +296,8 @@ class Root:
             uasyncio.run(_runner())
         except KeyboardInterrupt:
             print("Application stopped manually.")
-        except Exception as e:
-            logger().fatal( f"Unhandled exception in Root.run: {e}")
+        #except Exception as e: TODO: enable this
+            #logger().fatal( f"Unhandled exception in Root.run: {e}")
 
 
 
@@ -264,10 +315,10 @@ def root() -> Root:
 
 
 
-def task(interval: str|int, async_task: bool = True, enabled: bool = True, priority: int = 3,boot: bool = False,parallel: bool = False):
+def task(interval: str|int|None, async_task: bool = True, enabled: bool = True, priority: int = 3,boot: bool = False,parallel: bool = False):
     """
     This decorator is used to add a task to the root scheduler.
-    :param interval:  The execution interval as integer or string ("1ms", "1s", "1h").
+    :param interval:  The execution interval as integer or string ("1ms", "1s", "1h") or if boot is true -> None.
     :param async_task:  Weather your task is async or not (needs to be True if your task is async, so if 'async def your_task()').
     :param enabled: If the task is enabled or not.Needs to be True to run.
     :param priority:  Execution priority of the task. Lower values mean higher priority (0 = system; 3 = Normal ; 5 = Idle).

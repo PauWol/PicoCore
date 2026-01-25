@@ -1,7 +1,7 @@
 [system]
 
 [system.logger]
-level = "INFO"
+level = "DEBUG"
 buffersize = 5
  # int (bytes) or str with suffix ("1b" , "1kb" , "1mb")
 max_file_size = "64kb"
@@ -19,7 +19,7 @@ interval = 0.1 # in s
 [power]
 
 [power.monitoring]
-enabled = true
+enabled = false
 
 [power.battery]
 battery_voltage_max = 5.5  # Volts
@@ -34,3 +34,8 @@ enabled = true
 r1 = 10_000 # Resistance of R1 in Ohms
 r2 = 5_100 # Resistance of R2 in Ohms
 
+
+[comms]
+
+[comms.mesh]
+enabled = true
