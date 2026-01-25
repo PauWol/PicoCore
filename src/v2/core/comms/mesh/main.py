@@ -4,17 +4,15 @@ PicoCore V2 Comms Mesh Main
 This module provides the PicoCore V2 Comms Mesh main class.
 """
 import time
-import uselect as select
 from network import WLAN, STA_IF
 from aioespnow import AIOESPNow
 import uasyncio as asyncio
 from ..constants import (MAX_NEIGHBORS, MESH_TYPE_HELLO, MESH_TYPE_HELLO_ACK,
                         BROADCAST_ADDR, DEFAULT_TTL, MESH_FLAG_UNSECURE, \
                         MESH_FLAG_BCAST, MESH_FLAG_ACK, UNDEFINED_NODE_ID,
-                         BROADCAST_ADDR_MAC, MESH_FLAG_UNICAST, MESH_BACKGROUND_LISTENER_INTERVAL,
-                        MESH_BACKGROUND_PRIORITY, MESH_TYPE_DATA
+                         BROADCAST_ADDR_MAC, MESH_FLAG_UNICAST, MESH_TYPE_DATA
                          )
-from ..mesh import RingBuffer, logger
+from .. import RingBuffer, logger
 from .packets import build_packet, parse_packet, payload_conv
 
 class Mesh: # pylint: disable=too-many-instance-attributes

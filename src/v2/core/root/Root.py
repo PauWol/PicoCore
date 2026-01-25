@@ -1,6 +1,9 @@
 from uasyncio import sleep as async_sleep, create_task
 from time import ticks_ms,ticks_diff,ticks_add
 from machine import lightsleep
+import uasyncio
+import sys
+
 from ..queue import RingBuffer
 from ..config import get_config
 from ..constants import POWER_MONITOR_ENABLED,SLEEP_INTERVAL, EVENT_ROOT_LOOP_BOOT_BEFORE, EVENT_ROOT_LOOP_BOOT_AFTER,MESH_ENABLED
@@ -8,8 +11,7 @@ from ..logging import logger
 from .bus import emit
 from ..util import boot_flag_task
 from ..comms.mesh import mesh
-import uasyncio
-import sys
+
 
 """
 SYSTEM   = 0
@@ -61,11 +63,11 @@ class Task:
         if isinstance(interval, str):
             if interval.endswith("ms"):
                 return int(interval[:-2])
-            elif interval.endswith("s"):
+            if interval.endswith("s"):
                 return int(interval[:-1]) * 1000
-            elif interval.endswith("min"):
+            if interval.endswith("min"):
                 return int(interval[:-3]) * 1000 * 60
-            elif interval.endswith("h"):
+            if interval.endswith("h"):
                 return int(interval[:-1]) * 1000 * 60 * 60
             else:
                 raise ValueError("Invalid interval format")
@@ -253,7 +255,7 @@ class Root:
         del self._boot_tasks[:]
 
         emit(EVENT_ROOT_LOOP_BOOT_AFTER,"")
-        logger().debug(f"Root boot completed")
+        logger().debug("Root boot completed")
 
 
 
@@ -279,8 +281,7 @@ class Root:
 
                 if self.dynamic_sleep:
                     t = ticks_diff(_task.next_run,now)
-                    if t < 0:
-                        t = 0
+                    t = max(t,0)
                     self._time_proposal_buffer.put(t)
             await self.sleep()
 

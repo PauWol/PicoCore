@@ -41,7 +41,8 @@ MESH_FLAG_UNSECURE   = const(1 << 7)   # Plain/unencrypted
 # Default Mesh Parameters
 # -------------------------------------------------------------------
 DEFAULT_TTL        = const(10)   # Default Time To Live (hops)
-MAX_PAYLOAD_SIZE   = ESPNOW_MAX_PAYLOAD_SIZE - (BASE_HEADER_SIZE_NO_CRC + CRC8_SIZE)  # Max payload bytes (fits header)
+# Max payload bytes (fits header)
+MAX_PAYLOAD_SIZE   = ESPNOW_MAX_PAYLOAD_SIZE - (BASE_HEADER_SIZE_NO_CRC + CRC8_SIZE)
 BROADCAST_ADDR     = const(0xFFFF)
 UNDEFINED_NODE_ID  = const(0x0000)  # For uninitialized nodes
 
