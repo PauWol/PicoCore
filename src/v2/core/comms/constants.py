@@ -53,3 +53,10 @@ BROADCAST_ADDR_MAC = b'\xff\xff\xff\xff\xff\xff'
 # -------------------------------------------------------------------
 MESH_BACKGROUND_LISTENER_INTERVAL = const(1)
 MESH_BACKGROUND_PRIORITY = const(3)
+
+
+# Mesh security
+
+MAX_PMK_BYTE_LEN = const(16)
+PMK_DEFAULT_KEY = "deM3ihQRvv>Gq!S&"
+

@@ -10,9 +10,10 @@ import uasyncio as asyncio
 from ..constants import (MAX_NEIGHBORS, MESH_TYPE_HELLO, MESH_TYPE_HELLO_ACK,
                         BROADCAST_ADDR, DEFAULT_TTL, MESH_FLAG_UNSECURE, \
                         MESH_FLAG_BCAST, MESH_FLAG_ACK, UNDEFINED_NODE_ID,
-                         BROADCAST_ADDR_MAC, MESH_FLAG_UNICAST, MESH_TYPE_DATA
+                        BROADCAST_ADDR_MAC, MESH_FLAG_UNICAST, MESH_TYPE_DATA, \
+                        MAX_PMK_BYTE_LEN, PMK_DEFAULT_KEY
                          )
-from .. import RingBuffer, logger
+from .. import RingBuffer, logger, get_config, MESH_SECRET
 from .packets import build_packet, parse_packet, payload_conv
 
 class Mesh: # pylint: disable=too-many-instance-attributes
@@ -38,6 +39,14 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         self._receiving = False
         self._rx_enabled = False
         self._rx_expected_until = 0  # ticks_ms timestamp
+
+        _conf = get_config()
+
+        _secret = str(_conf.get(MESH_SECRET))
+
+        if _secret:
+            self._update_pmk(_secret)
+
 
     def _up_sequence(self) -> None:
         """
@@ -84,6 +93,28 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         _idx = self._neighbor_index[node_id]
         self._neighbors.clear_index(_idx)
         del self._neighbor_index[node_id]
+
+    @staticmethod
+    def _is_pmk_valid(pmk: bytes|bytearray|str) -> bool:
+        """
+        Perform validity checks for the custom user pmk.
+
+        :return:
+        """
+        return  len(pmk) > MAX_PMK_BYTE_LEN
+
+    def _update_pmk(self,pmk: bytes|bytearray|str) -> None:
+        """
+        Set the primary master key for encryption.
+
+        :return:
+        """
+        _pmk_l = pmk
+
+        if not self._is_pmk_valid(pmk):
+            _pmk_l = PMK_DEFAULT_KEY
+
+        self._esp.set_pmk(_pmk_l)
 
     def _update_neighbor(self, node_id: int, entry: tuple[int, bytes, int, int, int, int]) -> None:
         """

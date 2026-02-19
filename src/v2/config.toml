@@ -39,3 +39,4 @@ r2 = 5_100 # Resistance of R2 in Ohms
 
 [comms.mesh]
 enabled = true
+secret = "Ur shared secret key"
