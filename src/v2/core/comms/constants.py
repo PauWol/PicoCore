@@ -37,6 +37,12 @@ MESH_FLAG_UNRELIABLE = const(1 << 5)   # Best-effort delivery
 MESH_FLAG_SECURE     = const(1 << 6)   # Encrypted/authenticated
 MESH_FLAG_UNSECURE   = const(1 << 7)   # Plain/unencrypted
 
+MESH_FLAG_GATEWAY       = const(1 << 8)   # Marks a NODE to be a gateway, I know it's not ideal.
+
+# Mesh flags for partial messages
+MESH_FLAG_PARTIAL_START = const(1 << 9)
+MESH_FLAG_PARTIAL_END   = const(1 << 10)
+MESH_FLAG_PARTIAL       = const(1 << 11)
 # -------------------------------------------------------------------
 # Default Mesh Parameters
 # -------------------------------------------------------------------

@@ -5,10 +5,12 @@ This module provides utility functions for the PicoCore V2 Comms Mesh module.
 """
 
 import ustruct as struct
-from ..constants import BASE_HEADER_FORMAT_NO_CRC, BASE_HEADER_SIZE_NO_CRC, MESH_VERSION, MAX_PAYLOAD_SIZE
-from ..crc8 import append_crc8_to_bytearray , verify_crc8
+from ..constants import BASE_HEADER_FORMAT_NO_CRC, BASE_HEADER_SIZE_NO_CRC, MESH_VERSION, MAX_PAYLOAD_SIZE, \
+    MESH_FLAG_PARTIAL_START, MESH_FLAG_PARTIAL_END, MESH_FLAG_PARTIAL
+from ..crc8 import append_crc8_to_bytearray, verify_crc8
 
-def payload_conv(payload: str|bytes|bytearray,_iter:bool=False):
+
+def payload_conv(payload: str | bytes | bytearray, _iter: bool = False):
     """
     Convert payload to bytes.
     :param payload:
@@ -16,9 +18,9 @@ def payload_conv(payload: str|bytes|bytearray,_iter:bool=False):
     :return: bytes or generator
     """
     _p = b""
-    if isinstance(payload,str):
+    if isinstance(payload, str):
         _p = payload.encode()
-    if isinstance(payload,bytearray):
+    if isinstance(payload, bytearray):
         _p = payload
     else:
         _p = payload
@@ -27,14 +29,14 @@ def payload_conv(payload: str|bytes|bytearray,_iter:bool=False):
         raise ValueError("Payload too large")
 
     if _iter:
-        for i in range(0,len(_p),MAX_PAYLOAD_SIZE):
-            yield _p[i:i+MAX_PAYLOAD_SIZE]
+        for i in range(0, len(_p), MAX_PAYLOAD_SIZE):
+            yield _p[i:i + MAX_PAYLOAD_SIZE]
 
     return _p
 
 
-
-def build_packet(ptype: int, src: int, dst: int, seq: int, # pylint: disable=too-many-arguments,too-many-positional-arguments
+def build_packet(ptype: int, src: int, dst: int, seq: int,
+                 # pylint: disable=too-many-arguments,too-many-positional-arguments
                  ttl: int, flags: int, payload: bytes) -> bytearray:
     """
     Build a mesh packet.
@@ -68,7 +70,8 @@ def build_packet(ptype: int, src: int, dst: int, seq: int, # pylint: disable=too
     # Return final packet
     return header + payload
 
-def _checks(version: int,plen: int,plen_check: int) -> bool:
+
+def _checks(version: int, plen: int, plen_check: int) -> bool:
     """
     Check if the packet is valid.
     :param version:
@@ -78,6 +81,7 @@ def _checks(version: int,plen: int,plen_check: int) -> bool:
     """
     return version == MESH_VERSION and plen == plen_check
 
+
 def parse_packet(packet: bytes) -> tuple[int, int, int, int, int, int, int, int, bytes] | None:
     """
     Parse a mesh packet.
@@ -85,7 +89,6 @@ def parse_packet(packet: bytes) -> tuple[int, int, int, int, int, int, int, int,
     :return: Tuple of (version, ptype, src, dst, seq, ttl, flags, plen, payload) or None if invalid
     """
     _header_crc8 = packet[:BASE_HEADER_SIZE_NO_CRC + 1]
-
 
     # Header Sum Check
     if not verify_crc8(_header_crc8):
@@ -95,10 +98,92 @@ def parse_packet(packet: bytes) -> tuple[int, int, int, int, int, int, int, int,
     _payload = packet[BASE_HEADER_SIZE_NO_CRC + 1:]
 
     _version, _ptype, _src, _dst, _seq, _ttl, _flags, _plen \
-    = struct.unpack(BASE_HEADER_FORMAT_NO_CRC, _header)
+        = struct.unpack(BASE_HEADER_FORMAT_NO_CRC, _header)
 
     # Other checks
-    if not _checks(_version,_plen,len(_payload)):
+    if not _checks(_version, _plen, len(_payload)):
         return None
 
     return _version, _ptype, _src, _dst, _seq, _ttl, _flags, _plen, _payload
+
+
+def chunk_packet(ptype: int, src: int, dst: int, seq: int,
+                 # pylint: disable=too-many-arguments,too-many-positional-arguments
+                 ttl: int, flags: int, _payload: str | bytes | bytearray):
+    """
+    Split up a payload if it exceeds MAX_PAYLOAD_SIZE in multiple messages.
+
+    :param ptype:
+    :param src:
+    :param dst:
+    :param seq:
+    :param ttl:
+    :param flags:
+    :param _payload:
+    :yields: the build packets
+    """
+
+    if _payload < MAX_PAYLOAD_SIZE:
+        yield build_packet(ptype, src, dst, seq, ttl, flags, payload_conv(_payload))
+
+    _chunk_count = len(_payload) / MAX_PAYLOAD_SIZE
+
+    for i, v in enumerate(payload_conv(_payload, True)):
+
+        if i == 0:
+            yield build_packet(ptype, src, dst, seq, ttl, flags | MESH_FLAG_PARTIAL_START, v)
+
+        if i == _chunk_count:
+            yield build_packet(ptype, src, dst, seq, ttl, flags | MESH_FLAG_PARTIAL_END, v)
+
+        else:
+
+            yield build_packet(ptype, src, dst, seq, ttl, flags | MESH_FLAG_PARTIAL, v)
+
+
+def encode_neighbour_tuple(data: tuple[int, bytes, int, int, int, int, bool]) -> bytes:
+    """
+    Encode tuple (int, bytes, int, int, int, int, bool) to bytes.
+    Format:
+    - int (4 bytes)
+    - length of bytes field (4 bytes)
+    - bytes field (variable length)
+    - int (4 bytes)
+    - int (4 bytes)
+    - int (4 bytes)
+    - int (4 bytes)
+    - bool (1 byte)
+
+    :param data: The neighbor as tuple(node_id, mac, version, seq, now, rssi, gateway)
+    :return: bytes
+    """
+    a, b_bytes, c, d, e, f, g = data
+    b_len = len(b_bytes)
+
+    # Pack fixed parts + length of bytes field
+    header = struct.pack('ii', a, b_len)
+    # Pack remaining ints and bool
+    tail = struct.pack('iiii?', c, d, e, f, g)
+
+    return header + b_bytes + tail
+
+
+def decode_neighbour_bytes(encoded: bytes) -> tuple[int, bytes, int, int, int, int, bool]:
+    """
+    Decode bytes neighbour object back to tuple.
+
+    :param encoded: The neighbor as encoded bytes tuple(node_id, mac, version, seq, now, rssi, gateway)
+    :return: tuple(node_id, mac, version, seq, now, rssi, gateway)
+    """
+    # Unpack first two ints: a and length of bytes field
+    a, b_len = struct.unpack('ii', encoded[:8])
+
+    # Extract bytes field
+    b_start = 8
+    b_end = b_start + b_len
+    b_bytes = encoded[b_start:b_end]
+
+    # Unpack remaining ints and bool
+    c, d, e, f, g = struct.unpack('iiii?', encoded[b_end:b_end + 17])
+
+    return a, b_bytes, c, d, e, f, g
