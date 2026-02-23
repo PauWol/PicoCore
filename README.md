@@ -11,7 +11,7 @@ PicoCore is a lightweight **MicroPython-based runtime and API** for the Raspberr
 - Easy-to-use API for sensors,logging,decision making and networking
 - Configurable via `config.toml`
 - Optimized for **low-power use cases**
-- Compatible with Raspberry Pi Pico & Pico W (Pico W planned)
+- Compatible with Raspberry Pi Pico, Pico W (Pico 2 Series planned) & Esp32
 
 ## 📖 Documentation
 
