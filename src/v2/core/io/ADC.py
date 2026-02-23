@@ -6,6 +6,7 @@ This class provides a simple interface to the machines ADC (Analog-to-Digital Co
 
 from time import sleep
 import math
+from math import isnan
 from machine import ADC as HWADC, Pin
 from uasyncio import sleep as async_sleep
 
@@ -75,31 +76,47 @@ class ADC:
         """
         Return list of n samples (optionally with delay).
 
+        > Note: If a sample is not a number (nan), it will be skipped and its index will be filled with 0.
+
         :param n: Number of samples to return
         :param _type: String of measurement method type can be "raw" | "real" | "voltage"
         :param delay: Delay between samples in seconds
         :return: List of n samples
         """
-        data = []
-        for _ in range(n):
+        data = [0] * n
+        for i in range(n):
             if delay:
                 sleep(delay)
-            data.append(self._measure(_type))
+            _d = self._measure(_type)
+
+            if not isnan(_d):
+                data[i] = _d
+            else:
+                continue
+
         return data
 
     async def async_samples(self, n: int = 10, _type: str = "raw", delay: float = 0.001) -> list[float]: # pylint: disable=line-too-long
         """
         Return list of n samples (optionally with delay).
+
+        > Note: If a sample is not a number (nan), it will be skipped and its index will be filled with 0.
+
         :param n: Number of samples to return
         :param _type: String of measurement method type can be "raw" | "real" | "voltage"
         :param delay: Delay between samples in seconds
         :return:  List of n samples
         """
-        data = []
-        for _ in range(n):
+        data = [0] * n
+        for i in range(n):
             if delay:
                 await async_sleep(delay)
-            data.append(self._measure(_type))
+            _d = self._measure(_type)
+
+            if not isnan(_d):
+                data[i] = _d
+            else:
+                continue
         return data
 
     def mean(self, n: int = 10, _type: str = "raw", delay: float = 0.001) -> float:
