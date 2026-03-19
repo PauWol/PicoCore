@@ -5,6 +5,7 @@ This module provides utility functions for the PicoCore V2 Comms Mesh module.
 """
 
 import ustruct as struct
+import ujson
 from ..constants import BASE_HEADER_FORMAT_NO_CRC, BASE_HEADER_SIZE_NO_CRC, MESH_VERSION, MAX_PAYLOAD_SIZE, \
     MESH_FLAG_PARTIAL_START, MESH_FLAG_PARTIAL_END, MESH_FLAG_PARTIAL
 from ..crc8 import append_crc8_to_bytearray, verify_crc8
@@ -123,10 +124,12 @@ def chunk_packet(ptype: int, src: int, dst: int, seq: int,
     :yields: the build packets
     """
 
-    if _payload < MAX_PAYLOAD_SIZE:
+    _plen = len(_payload)
+
+    if _plen <= MAX_PAYLOAD_SIZE:
         yield build_packet(ptype, src, dst, seq, ttl, flags, payload_conv(_payload))
 
-    _chunk_count = len(_payload) / MAX_PAYLOAD_SIZE
+    _chunk_count = (_plen + MAX_PAYLOAD_SIZE - 1) // MAX_PAYLOAD_SIZE
 
     for i, v in enumerate(payload_conv(_payload, True)):
 
@@ -141,49 +144,9 @@ def chunk_packet(ptype: int, src: int, dst: int, seq: int,
             yield build_packet(ptype, src, dst, seq, ttl, flags | MESH_FLAG_PARTIAL, v)
 
 
-def encode_neighbour_tuple(data: tuple[int, bytes, int, int, int, int, bool]) -> bytes:
-    """
-    Encode tuple (int, bytes, int, int, int, int, bool) to bytes.
-    Format:
-    - int (4 bytes)
-    - length of bytes field (4 bytes)
-    - bytes field (variable length)
-    - int (4 bytes)
-    - int (4 bytes)
-    - int (4 bytes)
-    - int (4 bytes)
-    - bool (1 byte)
-
-    :param data: The neighbor as tuple(node_id, mac, version, seq, now, rssi, gateway)
-    :return: bytes
-    """
-    a, b_bytes, c, d, e, f, g = data
-    b_len = len(b_bytes)
-
-    # Pack fixed parts + length of bytes field
-    header = struct.pack('ii', a, b_len)
-    # Pack remaining ints and bool
-    tail = struct.pack('iiii?', c, d, e, f, g)
-
-    return header + b_bytes + tail
+def encode_neighbour_tuple(_neighbors: dict) -> bytes:
+    return ujson.dumps(list(_neighbors.values())).encode()
 
 
-def decode_neighbour_bytes(encoded: bytes) -> tuple[int, bytes, int, int, int, int, bool]:
-    """
-    Decode bytes neighbour object back to tuple.
-
-    :param encoded: The neighbor as encoded bytes tuple(node_id, mac, version, seq, now, rssi, gateway)
-    :return: tuple(node_id, mac, version, seq, now, rssi, gateway)
-    """
-    # Unpack first two ints: a and length of bytes field
-    a, b_len = struct.unpack('ii', encoded[:8])
-
-    # Extract bytes field
-    b_start = 8
-    b_end = b_start + b_len
-    b_bytes = encoded[b_start:b_end]
-
-    # Unpack remaining ints and bool
-    c, d, e, f, g = struct.unpack('iiii?', encoded[b_end:b_end + 17])
-
-    return a, b_bytes, c, d, e, f, g
+def decode_neighbour_bytes(encoded: bytes) -> list:
+    return ujson.loads(encoded.decode())

@@ -7,14 +7,17 @@ import time
 from network import WLAN, STA_IF
 from aioespnow import AIOESPNow
 import uasyncio as asyncio
+import ujson
 from ..constants import (MAX_NEIGHBORS, MESH_TYPE_HELLO, MESH_TYPE_HELLO_ACK,
                          BROADCAST_ADDR, DEFAULT_TTL, MESH_FLAG_UNSECURE, \
                          MESH_FLAG_BCAST, MESH_FLAG_ACK, UNDEFINED_NODE_ID,
                          BROADCAST_ADDR_MAC, MESH_FLAG_UNICAST, MESH_TYPE_DATA, \
-                         MAX_PMK_BYTE_LEN, PMK_DEFAULT_KEY, MESH_FLAG_GATEWAY
+                         MAX_PMK_BYTE_LEN, PMK_DEFAULT_KEY, MESH_FLAG_GATEWAY, MESH_FLAG_PARTIAL, MESH_FLAG_PARTIAL_END,
+                         MESH_FLAG_PARTIAL_START
                          )
 from .. import RingBuffer, logger, get_config, MESH_SECRET
-from .packets import build_packet, parse_packet, payload_conv, chunk_packet, encode_neighbour_tuple
+from .packets import build_packet, parse_packet, payload_conv, chunk_packet, encode_neighbour_tuple, \
+    decode_neighbour_bytes
 
 
 class Mesh: # pylint: disable=too-many-instance-attributes
@@ -34,21 +37,19 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         self._started: bool = False
         self._wlan: WLAN | None = None
         self._esp: AIOESPNow | None = None
-        self._neighbors = RingBuffer(MAX_NEIGHBORS, True)
+        self._neighbors = {} # TODO: Maybe add fixed leng dict with * MAX_NEIGHBORS
         self._peers = RingBuffer(MAX_NEIGHBORS, True)
         self._neighbor_index = {} # {node_id: index}+
         self._receiving = False
         self._rx_enabled = False
         self._rx_expected_until = 0  # ticks_ms timestamp
         self._raw_recv_callback_data = False
-        self._raw_recv_callback_data = False
+        self._fragments = {}  # (src, seq) -> [chunks]
+        self._neighbor_timeout = 30000  # 30s
 
-        _conf = get_config()
-
-        _secret = str(_conf.get(MESH_SECRET))
-
-        if _secret:
-            self._update_pmk(_secret)
+        self._seen_packets = set()
+        self._seen_limit = 100
+        self._seen_queue = RingBuffer(self._seen_limit)
 
 
     def _up_sequence(self) -> None:
@@ -59,33 +60,57 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         if self._sequence > 0xFFFF:  # hex for 65535
             self._sequence = 0
 
-    def _is_neighbor(self,node_id:int) -> bool:
+    def _seen(self, src, seq):
+        key = (src, seq)
+        if key in self._seen_packets:
+            return True
+
+        self._seen_packets.add(key)
+        self._seen_queue.put(key)
+
+        if len(self._seen_queue) > self._seen_limit:
+            old = self._seen_queue.get()
+            self._seen_packets.remove(old)
+
+        return False
+
+    def _add_neighbor(self, entry) -> None:
         """
-        Check if a node is a neighbor.
-        :param node_id: The node id as int
-        :return:
+        Add a neighbor to the known dict.
+        """
+        self._neighbors[entry[0]] = entry
+
+    def _get_neighbour(self, node_id: int):
+        """
+        Get a neighbor from the known dict.
+
+        :returns: The neighbor entry as tuple ()
+        """
+        return self._neighbors.get(node_id)
+
+    def _is_neighbor(self, node_id: int) -> bool:
+        """
+        Check if a node is a neighbor
+
+        :param node_id:
+        :returns:
         """
         return node_id in self._neighbors
 
-    def _get_neighbour(self,node_id: int) -> tuple[int, bytes, int, int, int, int, bool]|object|None:
+    def _update_neighbor(self,node_id:int ,entry)-> None:
         """
-        Get a neighbor by node id.
-        :param node_id: The node id as int
-        :return: The neighbor as tuple(node_id, mac, version, seq, now, rssi, gateway) or None if not found
+        Update a neighbor entry.
         """
-        if not self._is_neighbor(node_id):
-            return None
-        _i = self._neighbor_index[node_id]
-        return self._neighbors.peek(_i)
+        self._neighbors[node_id] = entry
 
-    def _add_neighbor(self, entry: tuple[int, bytes, int, int, int, int, bool]) -> None:
-        """
-        Add a node to the neighbors list.
-        :param entry: (node_id, mac, version, seq, now, rssi, gateway)
-        :return:
-        """
-        self._neighbors.put(entry)
-        self._neighbor_index[entry[0]] = len(self._neighbors)
+    def _cleanup_neighbors(self):
+        now = time.ticks_ms()
+
+        for node, entry in list(self._neighbors.items()):
+            _, _, _, _, ts, _, _ = entry
+
+            if time.ticks_diff(now, ts) > self._neighbor_timeout:
+                del self._neighbors[node]
 
     def _remove_neighbor(self,node_id: int) -> None:
         """
@@ -93,9 +118,8 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         :param node_id: The node id as int
         :return:
         """
-        _idx = self._neighbor_index[node_id]
-        self._neighbors.clear_index(_idx)
-        del self._neighbor_index[node_id]
+        if self._is_neighbor(node_id):
+            del self._neighbors[node_id]
 
     @staticmethod
     def _is_pmk_valid(pmk: bytes|bytearray|str) -> bool:
@@ -104,7 +128,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
 
         :return:
         """
-        return  len(pmk) > MAX_PMK_BYTE_LEN
+        return 0 < len(pmk) <= MAX_PMK_BYTE_LEN
 
     def _update_pmk(self,pmk: bytes|bytearray|str) -> None:
         """
@@ -118,16 +142,6 @@ class Mesh: # pylint: disable=too-many-instance-attributes
             _pmk_l = PMK_DEFAULT_KEY
 
         self._esp.set_pmk(_pmk_l)
-
-    def _update_neighbor(self, node_id: int, entry: tuple[int, bytes, int, int, int, int, bool]) -> None:
-        """
-        Update a node in the neighbors list.
-        :param node_id: The node id as int
-        :param entry: (node_id, mac, version, seq, now, rssi, gateway)
-        :return:
-        """
-        _idx = self._neighbor_index[node_id]
-        self._neighbors.put_index(_idx, entry)
 
     @staticmethod
     def _convert_receive_timeout(timeout: str | float | None) -> int:
@@ -200,11 +214,19 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         :return:
         """
 
-        _version, _ptype, _src, _dst, _seq, _ttl, _flags, _plen, _payload = parse_packet(msg)
+        parsed = parse_packet(msg)
+        if not parsed:
+            return
+        _version, _ptype, _src, _dst, _seq, _ttl, _flags, _plen, _payload = parsed
+
 
         # Return if packet is from self
         if _src == self.node_id():
            return
+
+        # DROP duplicates
+        if self._seen(_src, _seq):
+            return
 
         if _flags & MESH_FLAG_GATEWAY:
             self.device_registry(host,_src,_version,_seq,True)
@@ -223,15 +245,56 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         if _ptype == MESH_TYPE_HELLO_ACK:
             logger().debug("HELLO_ACK packet received")
 
-            # TODO: implement neighbour table parsing
+            neighbors = decode_neighbour_bytes(_payload)
+
+            for n in neighbors:
+                self._add_neighbor(tuple(n))
+
+
+
+        # FORWARD if not for us
+        if _dst != self.node_id() and (_ptype == MESH_TYPE_DATA or _ptype == MESH_TYPE_HELLO_ACK):
+            if _ttl > 1:
+                _ttl -= 1
+
+                fwd_packet = build_packet(
+                    _ptype, _src, _dst, _seq,
+                    _ttl, _flags, _payload
+                )
+
+                # broadcast forward (simple flooding)
+                self._esp.send(BROADCAST_ADDR_MAC, fwd_packet, False)
+
+            return
+
 
         if _ptype == MESH_TYPE_DATA:
             logger().debug("DATA packet received")
+
+            key = (_src, _seq)
+
+            if _flags & MESH_FLAG_PARTIAL:
+                if _flags & MESH_FLAG_PARTIAL_START:
+                    self._fragments[key] = []
+
+                if key not in self._fragments:
+                    return  # drop invalid sequence
+
+                self._fragments[key].append(_payload)
+
+                if _flags & MESH_FLAG_PARTIAL_END:
+                    full = b''.join(self._fragments[key])
+                    del self._fragments[key]
+                    _payload = full
+                else:
+                    return
+
             try:
                 # (mac,node_id),(_payload)
                 if not self._raw_recv_callback_data:
-                    _payload = _payload.decode("uft-8")
-                await self._on_recv((host,_src),_payload)
+                    _payload = _payload.decode("utf-8")
+                if self._on_recv:
+                    await self._on_recv((host,_src),_payload)
 
             except Exception as e:
                 logger().error(f"Mesh receive error in callback: {e}")
@@ -269,7 +332,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
             if entry is None:
                 raise ValueError(f"Unknown node ID: {peer}")
 
-            node_id, mac, _, _, _, _ = entry
+            node_id, mac, _, _, _, _, _ = entry
             return node_id, mac
 
         if self.is_mac(peer):
@@ -291,7 +354,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
 
         # Build hello packet
         return build_packet(MESH_TYPE_HELLO, self.node_id(), BROADCAST_ADDR,
-                            self._sequence, 1,MESH_FLAG_BCAST | MESH_FLAG_ACK
+                            self._sequence, self._ttl,MESH_FLAG_BCAST | MESH_FLAG_ACK
                             | MESH_FLAG_UNSECURE, b""), BROADCAST_ADDR_MAC
 
     def _hello_ack(self, host: bytes | bytearray) -> bytearray:
@@ -308,7 +371,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         # Build hello ack packet
         return build_packet(MESH_TYPE_HELLO_ACK, self.node_id(),
                             self.node_id(host), self._sequence,
-                            1, MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE,
+                            self._ttl, MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE,
                             b""
                             )
 
@@ -376,6 +439,10 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         else:
             self._update_neighbor(src, (src, host, version, seq, ts, rssi, gateway))
 
+        self._cleanup_neighbors()
+
+    async def async_resend(self,):
+        pass
 
     def hello(self) -> None:
         """
@@ -408,12 +475,12 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         :param mac:
         :return:
         """
-        _payload = encode_neighbour_tuple(self._neighbors.to_tuple())
+        _payload = encode_neighbour_tuple(self._neighbors)
         _flags = MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE
 
         for _p in chunk_packet(MESH_TYPE_HELLO_ACK, self.node_id(),
                             self.node_id(mac), self._sequence,
-                            1,_flags,_payload):
+                            self._ttl,_flags,_payload):
 
             await self._async_send(_p, mac, False)
 
@@ -458,7 +525,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
 
         for _p in payload_conv(payload,True):
             self._up_sequence()
-            _pb = build_packet(MESH_TYPE_DATA, self.node_id(), _dst_node_id , self._sequence, 1, MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE, _p)
+            _pb = build_packet(MESH_TYPE_DATA, self.node_id(), _dst_node_id , self._sequence, self._ttl, MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE, _p)
 
             self._send(_pb, _mac , True)
 
@@ -474,7 +541,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
 
         for _p in payload_conv(payload,True):
             self._up_sequence()
-            _pb = build_packet(MESH_TYPE_DATA, self.node_id(), _dst_node_id , self._sequence, 1, MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE, _p)
+            _pb = build_packet(MESH_TYPE_DATA, self.node_id(), _dst_node_id , self._sequence, self._ttl, MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE, _p)
 
             await self._async_send(_pb, _mac , True)
 
@@ -492,6 +559,14 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         self._wlan.disconnect()
 
         self._esp = AIOESPNow()
+
+        _conf = get_config()
+
+        _secret = str(_conf.get(MESH_SECRET))
+
+        if _secret:
+            self._update_pmk(_secret)
+
         self._esp.active(True)
 
         # Add broadcast peer
@@ -594,7 +669,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         Return mesh statistics.
         :return: (tx_pkts, tx_responses, tx_failures, rx_packets, rx_dropped_packets, started, receiving, node_id, mac, sequence, registered_neighbors_count)
         """
-        return self._esp.stats(), self._started, self._receiving, self._node_id, self._wlan.config('mac'), self._sequence, self._neighbors.available()
+        return self._esp.stats(), self._started, self._receiving, self._node_id, self._wlan.config('mac'), self._sequence, len(self._neighbors)
 
 
 _mesh: Mesh|None = None
