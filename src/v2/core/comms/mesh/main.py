@@ -48,7 +48,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
 
         self._seen_packets = set()
         self._seen_limit = 100
-        self._seen_queue = RingBuffer(self._seen_limit)
+        self._seen_queue = RingBuffer(self._seen_limit + 1)
 
     # Helper section ---------------------------------------------------------
 
@@ -143,6 +143,11 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         return False
 
     # Neighbor section -----------------------------------------------------------------
+    # TODO: Review neighbor and routing logic as it may lead to runtime errors if sending to indirect neighbor node that is out of range
+    # Data structures:
+    #
+    # - neighbor entry -> tuple (node_id, mac, version, seq, ts, rssi, gateway)
+
 
     def _add_neighbor(self, entry) -> None:
         """
@@ -211,7 +216,11 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         if self._is_node_id(peer):
             entry = self._get_neighbour(peer)
             if entry is None:
-                raise ValueError(f"Unknown node ID: {peer}")
+                raise ValueError(
+                    f"Unknown node ID: {peer}"
+                    "\nConsider using wait_for_hello_ack / async_wait_for_hello_ack "
+                    "to ensure target is registered neighbor"
+                                 )
 
             node_id, mac, _, _, _, _, _ = entry
             return node_id, mac
@@ -369,14 +378,19 @@ class Mesh: # pylint: disable=too-many-instance-attributes
             if _flags & MESH_FLAG_ACK:
                 await self.async_hello_ack(host)
                 logger().debug("HELLO_ACK sent")
+                return
 
-        if _ptype == MESH_TYPE_HELLO_ACK:
+        if _ptype == MESH_TYPE_HELLO_ACK and _dst == self.node_id():
             logger().debug("HELLO_ACK packet received")
 
             neighbors = decode_neighbour_bytes(_payload)
             logger().debug(f"Neighbors: {neighbors}")
             for n in neighbors:
-                self._add_neighbor(tuple(n))
+                n = tuple(n)
+                if n[0] == self.node_id():
+                    continue
+                self._add_neighbor(n)
+            return
 
 
 
@@ -421,17 +435,13 @@ class Mesh: # pylint: disable=too-many-instance-attributes
                 if not self._raw_recv_callback_data:
                     _payload = _payload.decode("utf-8")
                 if self._on_recv:
-                    res = self._on_recv((host, _src), _payload)
-
-                    if not hasattr(res, "__await__"): #TODO: FIx actual detection and consider removing it making sync/async support
-                        raise TypeError(
-                            "Mesh callback must be async and use 'async def'"
-                            "Note: ensure the function contains at least one 'await' " 
-                            "(e.g. 'await asyncio.sleep(0)') to avoid blocking the scheduler."
-                        )
-
-                    await res
-
+                    await self._on_recv((host, _src), _payload)
+            except TypeError as e:
+                logger().error( "Hint: Mesh callback must be async and use 'async def'"
+                                "Note: ensure the function contains at least one 'await' " 
+                                "(e.g. 'await asyncio.sleep(0)') to avoid blocking the scheduler."
+                            )
+                logger().error(f"Original Mesh receive error: {e}")
             except Exception as e:
                 logger().error(f"Mesh receive error in callback: {e}")
 
@@ -661,6 +671,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         - msg: bytes|bytearray -> payload
 
         :param callback:
+        :param raw: Whether the payload should automatically be decoded (utf-8) or not -> false == decoded
         :return:
         """
         self._raw_recv_callback_data = raw
