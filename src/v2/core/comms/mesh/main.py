@@ -7,7 +7,6 @@ import time
 from network import WLAN, STA_IF
 from aioespnow import AIOESPNow
 import uasyncio as asyncio
-import ujson
 from ..constants import (MAX_NEIGHBORS, MESH_TYPE_HELLO, MESH_TYPE_HELLO_ACK,
                          BROADCAST_ADDR, DEFAULT_TTL, MESH_FLAG_UNSECURE, \
                          MESH_FLAG_BCAST, MESH_FLAG_ACK, UNDEFINED_NODE_ID,
@@ -16,8 +15,8 @@ from ..constants import (MAX_NEIGHBORS, MESH_TYPE_HELLO, MESH_TYPE_HELLO_ACK,
                          MESH_FLAG_PARTIAL_START
                          )
 from .. import RingBuffer, logger, get_config, MESH_SECRET
-from .packets import build_packet, parse_packet, payload_conv, chunk_packet, encode_neighbour_tuple, \
-    decode_neighbour_bytes
+from .packets import build_packet, parse_packet, chunk_packet, encode_neighbour_tuple, \
+    decode_neighbour_bytes, payload_conv_iter
 
 
 class Mesh: # pylint: disable=too-many-instance-attributes
@@ -51,6 +50,75 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         self._seen_limit = 100
         self._seen_queue = RingBuffer(self._seen_limit)
 
+    # Helper section ---------------------------------------------------------
+
+    @staticmethod
+    def is_mac(value) -> bool:
+        """
+        Check whether value is a valid MAC address (bytes or bytearray).
+
+        :param value: Object to validate
+        :return: True if valid MAC, False otherwise
+        """
+        return (
+                isinstance(value, (bytes, bytearray)) and
+                len(value) == 6
+        )
+
+    @staticmethod
+    def _is_node_id(ref:int|bytes|bytearray) -> bool|None:
+        """
+          Identify whether ref is a MAC address or a node ID.
+
+          :param ref: bytes/bytearray (MAC) or int (node ID)
+          :return: True if ref is a node ID, False if ref is a MAC address, or None if invalid
+          """
+        # MAC address
+        if isinstance(ref, (bytes, bytearray)):
+            if len(ref) == 6:
+                return False
+            return None
+
+        # Node ID
+        if isinstance(ref, int):
+            # 16-bit node ID derived from MAC[4:6]
+            if 0 <= ref <= 0xFFFF:
+                return True
+            return None
+
+        return None
+
+
+    @staticmethod
+    def _convert_receive_timeout(timeout: str | float | None) -> int:
+        """
+        Convert a timeout to milliseconds.
+        Input can be a float, a string of the format "1ms" or "1s" or "1min" or "1h" or None.
+        :param timeout:
+        :return: Timeout in milliseconds or -1 if timeout is None
+        """
+
+        if timeout is None:
+            return -1
+
+        if isinstance(timeout, str):
+
+            timeout = timeout.lower().strip()
+
+            if timeout.endswith("ms"):
+                return int(timeout[:-2])
+            if timeout.endswith("s"):
+                return int(timeout[:-1]) * 1000
+            if timeout.endswith("min"):
+                return int(timeout[:-3]) * 1000 * 60
+            if timeout.endswith("h"):
+                return int(timeout[:-1]) * 1000 * 60 * 60
+
+            raise ValueError("Invalid timeout format")
+
+        return int(timeout * 1000)
+
+    # Sequencing section ---------------------------------------------------------------
 
     def _up_sequence(self) -> None:
         """
@@ -74,10 +142,13 @@ class Mesh: # pylint: disable=too-many-instance-attributes
 
         return False
 
+    # Neighbor section -----------------------------------------------------------------
+
     def _add_neighbor(self, entry) -> None:
         """
         Add a neighbor to the known dict.
         """
+        logger().debug(f"Adding neighbor: {entry}")
         self._neighbors[entry[0]] = entry
 
     def _get_neighbour(self, node_id: int):
@@ -121,184 +192,6 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         if self._is_neighbor(node_id):
             del self._neighbors[node_id]
 
-    @staticmethod
-    def _is_pmk_valid(pmk: bytes|bytearray|str) -> bool:
-        """
-        Perform validity checks for the custom user pmk.
-
-        :return:
-        """
-        return 0 < len(pmk) <= MAX_PMK_BYTE_LEN
-
-    def _update_pmk(self,pmk: bytes|bytearray|str) -> None:
-        """
-        Set the primary master key for encryption.
-
-        :return:
-        """
-        _pmk_l = pmk
-
-        if not self._is_pmk_valid(pmk):
-            _pmk_l = PMK_DEFAULT_KEY
-
-        self._esp.set_pmk(_pmk_l)
-
-    @staticmethod
-    def _convert_receive_timeout(timeout: str | float | None) -> int:
-        """
-        Convert a timeout to milliseconds.
-        Input can be a float, a string of the format "1ms" or "1s" or "1min" or "1h" or None.
-        :param timeout:
-        :return: Timeout in milliseconds or -1 if timeout is None
-        """
-
-        if timeout is None:
-            return -1
-
-        if isinstance(timeout, str):
-
-            timeout = timeout.lower().strip()
-
-            if timeout.endswith("ms"):
-                return int(timeout[:-2])
-            if timeout.endswith("s"):
-                return int(timeout[:-1]) * 1000
-            if timeout.endswith("min"):
-                return int(timeout[:-3]) * 1000 * 60
-            if timeout.endswith("h"):
-                return int(timeout[:-1]) * 1000 * 60 * 60
-
-            raise ValueError("Invalid timeout format")
-
-        return int(timeout * 1000)
-
-    def _send(self, packet, addr, ack: bool = True) -> None:
-        """
-        Send a packet.
-        :param packet:
-        :param addr:
-        :param ack:
-        :return:
-        """
-        if not self._started:
-            raise RuntimeError("Mesh needs to be started before "
-                               "sending packets! Use start() to start."
-                               )
-
-        self._add(addr)
-
-        self._esp.send(addr, packet, ack)
-
-    async def _async_send(self, packet, addr, ack: bool = True) -> None:
-        """
-        Send a packet.
-        :param packet:
-        :param addr:
-        :param ack:
-        :return:
-        """
-        if not self._started:
-            raise RuntimeError("Mesh needs to be started before "
-                               "sending packets! Use start() to start."
-                               )
-
-        self._add(addr)
-
-        await self._esp.asend(addr, packet, ack)
-
-    async def _irq(self, host: bytes|bytearray, msg: bytes|bytearray) -> None:
-        """
-        Interrupt handler for ESPNow on receive.
-        :param host:
-        :param msg:
-        :return:
-        """
-
-        parsed = parse_packet(msg)
-        if not parsed:
-            return
-        _version, _ptype, _src, _dst, _seq, _ttl, _flags, _plen, _payload = parsed
-
-
-        # Return if packet is from self
-        if _src == self.node_id():
-           return
-
-        # DROP duplicates
-        if self._seen(_src, _seq):
-            return
-
-        if _flags & MESH_FLAG_GATEWAY:
-            self.device_registry(host,_src,_version,_seq,True)
-
-        else:
-            self.device_registry(host, _src, _version, _seq, False)
-
-        # packet type check
-
-        if _ptype == MESH_TYPE_HELLO:
-            logger().debug("HELLO packet received")
-
-            if _flags & MESH_FLAG_ACK:
-                await self.async_hello_ack(host)
-
-        if _ptype == MESH_TYPE_HELLO_ACK:
-            logger().debug("HELLO_ACK packet received")
-
-            neighbors = decode_neighbour_bytes(_payload)
-
-            for n in neighbors:
-                self._add_neighbor(tuple(n))
-
-
-
-        # FORWARD if not for us
-        if _dst != self.node_id() and (_ptype == MESH_TYPE_DATA or _ptype == MESH_TYPE_HELLO_ACK):
-            if _ttl > 1:
-                _ttl -= 1
-
-                fwd_packet = build_packet(
-                    _ptype, _src, _dst, _seq,
-                    _ttl, _flags, _payload
-                )
-
-                # broadcast forward (simple flooding)
-                self._esp.send(BROADCAST_ADDR_MAC, fwd_packet, False)
-
-            return
-
-
-        if _ptype == MESH_TYPE_DATA:
-            logger().debug("DATA packet received")
-
-            key = (_src, _seq)
-
-            if _flags & MESH_FLAG_PARTIAL:
-                if _flags & MESH_FLAG_PARTIAL_START:
-                    self._fragments[key] = []
-
-                if key not in self._fragments:
-                    return  # drop invalid sequence
-
-                self._fragments[key].append(_payload)
-
-                if _flags & MESH_FLAG_PARTIAL_END:
-                    full = b''.join(self._fragments[key])
-                    del self._fragments[key]
-                    _payload = full
-                else:
-                    return
-
-            try:
-                # (mac,node_id),(_payload)
-                if not self._raw_recv_callback_data:
-                    _payload = _payload.decode("utf-8")
-                if self._on_recv:
-                    await self._on_recv((host,_src),_payload)
-
-            except Exception as e:
-                logger().error(f"Mesh receive error in callback: {e}")
-
     def _add(self, mac: bytes|bytearray|str) -> None:
         """
         Add a peer to the ESPNow network if it is not already added.
@@ -308,18 +201,6 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         if not mac in self._peers:
             self._peers.put(mac)
             self._esp.add_peer(mac)
-
-    def is_mac(self, value) -> bool:
-        """
-        Check whether value is a valid MAC address (bytes or bytearray).
-
-        :param value: Object to validate
-        :return: True if valid MAC, False otherwise
-        """
-        return (
-                isinstance(value, (bytes, bytearray)) and
-                len(value) == 6
-        )
 
     def _peer(self, peer) -> tuple[int, bytes]:
         """
@@ -342,62 +223,6 @@ class Mesh: # pylint: disable=too-many-instance-attributes
             f"Invalid peer: {peer} | type: {type(peer)} "
             "should be valid MAC address or node ID"
         )
-
-    def _hello(self) -> tuple[bytearray, str]:
-        """
-        Build a hello packet.
-        :return:  (packet,addr)
-        """
-
-        # Increment sequence number
-        self._up_sequence()
-
-        # Build hello packet
-        return build_packet(MESH_TYPE_HELLO, self.node_id(), BROADCAST_ADDR,
-                            self._sequence, self._ttl,MESH_FLAG_BCAST | MESH_FLAG_ACK
-                            | MESH_FLAG_UNSECURE, b""), BROADCAST_ADDR_MAC
-
-    def _hello_ack(self, host: bytes | bytearray) -> bytearray:
-        """
-        Send a hello ack packet.
-        :param host:
-        :return:
-        """
-
-
-        # Increment sequence number
-        self._up_sequence()
-
-        # Build hello ack packet
-        return build_packet(MESH_TYPE_HELLO_ACK, self.node_id(),
-                            self.node_id(host), self._sequence,
-                            self._ttl, MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE,
-                            b""
-                            )
-
-    @staticmethod
-    def _is_node_id(ref:int|bytes|bytearray) -> bool|None:
-        """
-          Identify whether ref is a MAC address or a node ID.
-
-          :param ref: bytes/bytearray (MAC) or int (node ID)
-          :return: True if ref is a node ID, False if ref is a MAC address, or None if invalid
-          """
-        # MAC address
-        if isinstance(ref, (bytes, bytearray)):
-            if len(ref) == 6:
-                return False
-            return None
-
-        # Node ID
-        if isinstance(ref, int):
-            # 16-bit node ID derived from MAC[4:6]
-            if 0 <= ref <= 0xFFFF:
-                return True
-            return None
-
-        return None
-
 
     def node_id(self, mac: bytes | bytearray= None) -> int:
         """
@@ -441,8 +266,188 @@ class Mesh: # pylint: disable=too-many-instance-attributes
 
         self._cleanup_neighbors()
 
-    async def async_resend(self,):
+
+    # Security section ----------------------------------------------------------------
+
+    @staticmethod
+    def _is_pmk_valid(pmk: bytes|bytearray|str) -> bool:
+        """
+        Perform validity checks for the custom user pmk.
+
+        :return:
+        """
+        return 0 < len(pmk) <= MAX_PMK_BYTE_LEN
+
+    def _update_pmk(self,pmk: bytes|bytearray|str) -> None:
+        """
+        Set the primary master key for encryption.
+
+        :return:
+        """
+        _pmk_l = pmk
+
+        if not self._is_pmk_valid(pmk):
+            _pmk_l = PMK_DEFAULT_KEY
+
+        self._esp.set_pmk(_pmk_l)
+
+    # Messaging section --------------------------------------------------------------------
+
+    def _send(self, packet, addr, ack: bool = True) -> None:
+        """
+        Send a packet.
+        :param packet:
+        :param addr:
+        :param ack:
+        :return:
+        """
+        if not self._started:
+            raise RuntimeError("Mesh needs to be started before "
+                               "sending packets! Use start() to start."
+                               )
+
+        self._add(addr)
+
+        self._esp.send(addr, packet, ack)
+
+    async def _async_send(self, packet, addr, ack: bool = True) -> None:
+        """
+        Send a packet.
+        :param packet:
+        :param addr:
+        :param ack:
+        :return:
+        """
+        if not self._started:
+            raise RuntimeError("Mesh needs to be started before "
+                               "sending packets! Use start() to start."
+                               )
+
+        self._add(addr)
+
+        await self._esp.asend(addr, packet, ack)
+
+    async def _async_resend(self,):
         pass
+
+
+    async def _irq(self, host: bytes|bytearray, msg: bytes|bytearray) -> None:
+        """
+        Interrupt handler for ESPNow on receive.
+        :param host:
+        :param msg:
+        :return:
+        """
+
+        parsed = parse_packet(msg)
+        if not parsed:
+            return
+        _version, _ptype, _src, _dst, _seq, _ttl, _flags, _plen, _payload = parsed
+
+
+        # Return if packet is from self
+        if _src == self.node_id():
+           return
+
+        key = (_src, _seq)
+        # DROP duplicates if not partial
+        if not (_flags & MESH_FLAG_PARTIAL):
+            if self._seen(*key):
+                return
+
+        if _flags & MESH_FLAG_GATEWAY:
+            self.device_registry(host,_src,_version,_seq,True)
+
+        else:
+            self.device_registry(host, _src, _version, _seq, False)
+
+        # packet type check
+
+        if _ptype == MESH_TYPE_HELLO:
+            logger().debug("HELLO packet received")
+
+            if _flags & MESH_FLAG_ACK:
+                await self.async_hello_ack(host)
+                logger().debug("HELLO_ACK sent")
+
+        if _ptype == MESH_TYPE_HELLO_ACK:
+            logger().debug("HELLO_ACK packet received")
+
+            neighbors = decode_neighbour_bytes(_payload)
+            logger().debug(f"Neighbors: {neighbors}")
+            for n in neighbors:
+                self._add_neighbor(tuple(n))
+
+
+
+        # FORWARD if not for us
+        if _dst != self.node_id() and (_ptype == MESH_TYPE_DATA or _ptype == MESH_TYPE_HELLO_ACK):
+            logger().debug("Forwarding")
+            if _ttl > 1:
+                _ttl -= 1
+
+                fwd_packet = build_packet(
+                    _ptype, _src, _dst, _seq,
+                    _ttl, _flags, _payload
+                )
+
+                # broadcast forward (simple flooding)
+                self._esp.send(BROADCAST_ADDR_MAC, fwd_packet, False)
+
+            return
+
+
+        if _ptype == MESH_TYPE_DATA:
+            logger().debug("DATA packet received")
+
+            if _flags & MESH_FLAG_PARTIAL:
+                if _flags & MESH_FLAG_PARTIAL_START:
+                    self._fragments[key] = []
+
+                if key not in self._fragments:
+                    return  # drop invalid sequence
+
+                self._fragments[key].append(_payload)
+
+                if _flags & MESH_FLAG_PARTIAL_END:
+                    full = b''.join(self._fragments[key])
+                    del self._fragments[key]
+                    _payload = full
+                else:
+                    return
+
+            try:
+                # (mac,node_id),(_payload)
+                if not self._raw_recv_callback_data:
+                    _payload = _payload.decode("utf-8")
+                if self._on_recv:
+                    res = self._on_recv((host, _src), _payload)
+
+                    if not hasattr(res, "__await__"): #TODO: FIx actual detection and consider removing it making sync/async support
+                        raise TypeError(
+                            "Mesh callback must be async and use 'async def'"
+                            "Note: ensure the function contains at least one 'await' " 
+                            "(e.g. 'await asyncio.sleep(0)') to avoid blocking the scheduler."
+                        )
+
+                    await res
+
+            except Exception as e:
+                logger().error(f"Mesh receive error in callback: {e}")
+
+    def _hello(self) -> tuple[bytearray, str]:
+        """
+        Build a hello packet.
+        :return:  (packet,addr)
+        """
+
+        # Increment sequence number
+        self._up_sequence()
+
+        # Build hello packet
+        return build_packet(MESH_TYPE_HELLO, self.node_id(), BROADCAST_ADDR,
+                            self._sequence, self._ttl,MESH_FLAG_BCAST | MESH_FLAG_ACK
+                            | MESH_FLAG_UNSECURE, b""), BROADCAST_ADDR_MAC
 
     def hello(self) -> None:
         """
@@ -460,28 +465,43 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         packet, addr = self._hello()
         await self._async_send(packet, addr, False)
 
+    def _hello_ack(self,mac: bytes|bytearray) -> tuple[int,int,int,int,int,int,bytes]:
+        """
+        Build the hello_ack packet.
+
+        :param mac:
+        :returns: the packet as tuple
+        """
+        _payload = encode_neighbour_tuple(self._neighbors)
+        logger().debug(f"HELLO_ACK _payload: {_payload}")
+        _flags = MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE
+
+        self._up_sequence()
+
+        return MESH_TYPE_HELLO_ACK, self.node_id(),self.node_id(mac), self._sequence, self._ttl, _flags, _payload
+
     def hello_ack(self, mac: bytes|bytearray) -> None:
         """
         Send a hello ack packet.
         :param mac:
         :return:
         """
-        packet = self._hello_ack(mac)
-        self._send(packet, mac, False)
+        _pkt = self._hello_ack(mac)
+
+        for _p in chunk_packet(*_pkt):
+            logger().debug("Sending chunk...")
+            self._send(_p, mac, False)
 
     async def async_hello_ack(self, mac: bytes|bytearray) -> None:
         """
-        Send a hello ack packet (share own neighbour table).
+        Send a hello ack packet (share own neighbor table).
         :param mac:
         :return:
         """
-        _payload = encode_neighbour_tuple(self._neighbors)
-        _flags = MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE
+        _pkt = self._hello_ack(mac)
 
-        for _p in chunk_packet(MESH_TYPE_HELLO_ACK, self.node_id(),
-                            self.node_id(mac), self._sequence,
-                            self._ttl,_flags,_payload):
-
+        for _p in chunk_packet(*_pkt):
+            logger().debug("Sending chunk...")
             await self._async_send(_p, mac, False)
 
     def wait_for_hello_ack(self, node_id: int, timeout: float = 5.0) -> bool:
@@ -523,7 +543,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         """
         _dst_node_id , _mac = self._peer(peer)
 
-        for _p in payload_conv(payload,True):
+        for _p in payload_conv_iter(payload):
             self._up_sequence()
             _pb = build_packet(MESH_TYPE_DATA, self.node_id(), _dst_node_id , self._sequence, self._ttl, MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE, _p)
 
@@ -539,11 +559,13 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         """
         _dst_node_id , _mac = self._peer(peer)
 
-        for _p in payload_conv(payload,True):
+        for _p in payload_conv_iter(payload):
             self._up_sequence()
             _pb = build_packet(MESH_TYPE_DATA, self.node_id(), _dst_node_id , self._sequence, self._ttl, MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE, _p)
 
             await self._async_send(_pb, _mac , True)
+
+    # Mesh Runtime section -----------------------------------------------------------
 
     def start(self) -> None:
         """
@@ -560,14 +582,15 @@ class Mesh: # pylint: disable=too-many-instance-attributes
 
         self._esp = AIOESPNow()
 
+        self._esp.active(True)
+
         _conf = get_config()
 
         _secret = str(_conf.get(MESH_SECRET))
 
         if _secret:
+            time.sleep_ms(200)
             self._update_pmk(_secret)
-
-        self._esp.active(True)
 
         # Add broadcast peer
         self._add(BROADCAST_ADDR_MAC)
@@ -640,7 +663,6 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         :param callback:
         :return:
         """
-
         self._raw_recv_callback_data = raw
         self._on_recv = callback
 
@@ -664,12 +686,18 @@ class Mesh: # pylint: disable=too-many-instance-attributes
                 logger().error(f"mesh rx error: {e}")
                 await asyncio.sleep_ms(20)
 
+
+
+    # Information section --------------------------------------------------------------------------------
+
     def stats(self):
         """
         Return mesh statistics.
         :return: (tx_pkts, tx_responses, tx_failures, rx_packets, rx_dropped_packets, started, receiving, node_id, mac, sequence, registered_neighbors_count)
         """
         return self._esp.stats(), self._started, self._receiving, self._node_id, self._wlan.config('mac'), self._sequence, len(self._neighbors)
+
+
 
 
 _mesh: Mesh|None = None

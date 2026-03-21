@@ -11,7 +11,7 @@ from ..constants import BASE_HEADER_FORMAT_NO_CRC, BASE_HEADER_SIZE_NO_CRC, MESH
 from ..crc8 import append_crc8_to_bytearray, verify_crc8
 
 
-def payload_conv(payload: str | bytes | bytearray, _iter: bool = False):
+def payload_conv(payload: str | bytes | bytearray):
     """
     Convert payload to bytes.
     :param payload:
@@ -21,20 +21,26 @@ def payload_conv(payload: str | bytes | bytearray, _iter: bool = False):
     _p = b""
     if isinstance(payload, str):
         _p = payload.encode()
-    if isinstance(payload, bytearray):
-        _p = payload
     else:
         _p = payload
 
-    if len(_p) > MAX_PAYLOAD_SIZE and not _iter:
-        raise ValueError("Payload too large")
-
-    if _iter:
-        for i in range(0, len(_p), MAX_PAYLOAD_SIZE):
-            yield _p[i:i + MAX_PAYLOAD_SIZE]
-
     return _p
 
+def payload_conv_iter(payload: str | bytes | bytearray):
+    """
+    Convert payload to bytes.
+    :param payload:
+    :param _iter: If True, return a generator for large payloads (>MAX_PAYLOAD_SIZE=239)
+    :return: bytes or generator
+    """
+    _p = b""
+    if isinstance(payload, str):
+        _p = payload.encode()
+    else:
+        _p = payload
+
+    for i in range(0, len(_p), MAX_PAYLOAD_SIZE):
+        yield _p[i:i + MAX_PAYLOAD_SIZE]
 
 def build_packet(ptype: int, src: int, dst: int, seq: int,
                  # pylint: disable=too-many-arguments,too-many-positional-arguments
@@ -123,30 +129,47 @@ def chunk_packet(ptype: int, src: int, dst: int, seq: int,
     :param _payload:
     :yields: the build packets
     """
-
+    print("chunking...")
     _plen = len(_payload)
 
     if _plen <= MAX_PAYLOAD_SIZE:
+        print("One Packet")
         yield build_packet(ptype, src, dst, seq, ttl, flags, payload_conv(_payload))
+        return
 
     _chunk_count = (_plen + MAX_PAYLOAD_SIZE - 1) // MAX_PAYLOAD_SIZE
+    print(f"chunk count: {_chunk_count}")
 
-    for i, v in enumerate(payload_conv(_payload, True)):
+    for i, v in enumerate(payload_conv_iter(_payload)):
 
         if i == 0:
+            print("start packet")
             yield build_packet(ptype, src, dst, seq, ttl, flags | MESH_FLAG_PARTIAL_START, v)
 
-        if i == _chunk_count:
+        elif i == _chunk_count - 1:
+            print("end packet")
             yield build_packet(ptype, src, dst, seq, ttl, flags | MESH_FLAG_PARTIAL_END, v)
 
         else:
-
+            print("partial packet")
             yield build_packet(ptype, src, dst, seq, ttl, flags | MESH_FLAG_PARTIAL, v)
 
 
 def encode_neighbour_tuple(_neighbors: dict) -> bytes:
-    return ujson.dumps(list(_neighbors.values())).encode()
-
+    safe = []
+    for entry in _neighbors.values():
+        node_id = entry[0]
+        mac = entry[1]
+        rest = entry[2:]
+        safe.append((node_id, mac.hex()) + tuple(rest))
+    return ujson.dumps(safe).encode()
 
 def decode_neighbour_bytes(encoded: bytes) -> list:
-    return ujson.loads(encoded.decode())
+    raw = ujson.loads(encoded.decode())
+    fixed = []
+    for entry in raw:
+        node_id = entry[0]
+        mac_hex = entry[1]
+        rest = entry[2:]
+        fixed.append((node_id, bytes.fromhex(mac_hex)) + tuple(rest))
+    return fixed
