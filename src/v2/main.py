@@ -21,12 +21,12 @@ mesh().rx_enable()
 async def hell():
     await mesh().async_hello()
     print("hello sent")
-"""
-node_id = 39448
 
-@task("2s")
-async def dat():
-        await mesh().async_wait_for_hello_ack(node_id)
-        await mesh().async_send_data(node_id,"Test")
-"""
+node_id = 25892
+
+@task("2s",False)
+def dat():
+    mesh().send_data(node_id,"TEST")
+
+
 start()

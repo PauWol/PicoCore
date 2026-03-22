@@ -18,7 +18,6 @@ Usage:
 
     start()
 """
-import time
 import asyncio
 from machine import Pin
 from . import config

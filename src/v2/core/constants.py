@@ -46,6 +46,7 @@ LOGGER_MAX_ROTATIONS = const("system.logger.max_rotations")
 
 MESH_ENABLED = const("comms.mesh.enabled")
 MESH_SECRET = const("comms.mesh.secret")
+MESH_GATEWAY = const("comms.mesh.gateway")
 
 
 SLEEP_INTERVAL = const("system.runtime.interval")

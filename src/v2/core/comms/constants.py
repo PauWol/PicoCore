@@ -12,7 +12,7 @@ import ustruct as struct
 BASE_HEADER_FORMAT_NO_CRC = "<BBHHHBBB"  # 9 bytes
 BASE_HEADER_SIZE_NO_CRC = struct.calcsize(BASE_HEADER_FORMAT_NO_CRC)
 CRC8_SIZE = const(2)
-MESH_VERSION = const(1)
+MESH_VERSION = const(2)
 MAX_NEIGHBORS = const(32)
 ESPNOW_MAX_PAYLOAD_SIZE = const(250)
 # -------------------------------------------------------------------
@@ -52,7 +52,7 @@ MAX_PAYLOAD_SIZE   = ESPNOW_MAX_PAYLOAD_SIZE - (BASE_HEADER_SIZE_NO_CRC + CRC8_S
 BROADCAST_ADDR     = const(0xFFFF)
 UNDEFINED_NODE_ID  = const(0x0000)  # For uninitialized nodes
 
-BROADCAST_ADDR_MAC = b'\xff\xff\xff\xff\xff\xff'
+BROADCAST_ADDR_MAC: bytes = b'\xff\xff\xff\xff\xff\xff'
 
 # -------------------------------------------------------------------
 # Mesh Background Task

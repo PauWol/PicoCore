@@ -74,7 +74,6 @@ class Task:
                 raise ValueError("Invalid interval format")
         raise ValueError(f"Invalid interval format {interval}, should be int (ms) or str with 'ms' , 's' or 'h' suffix")
 
-    @timed_function
     def should_run(self, now: int) -> bool:
         """
         Check if the task should run based on its interval.

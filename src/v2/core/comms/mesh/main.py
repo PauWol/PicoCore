@@ -14,10 +14,12 @@ from ..constants import (MAX_NEIGHBORS, MESH_TYPE_HELLO, MESH_TYPE_HELLO_ACK,
                          MAX_PMK_BYTE_LEN, PMK_DEFAULT_KEY, MESH_FLAG_GATEWAY, MESH_FLAG_PARTIAL, MESH_FLAG_PARTIAL_END,
                          MESH_FLAG_PARTIAL_START
                          )
-from .. import RingBuffer, logger, get_config, MESH_SECRET
+from .. import RingBuffer, logger, get_config, MESH_SECRET,MESH_GATEWAY
 from .packets import build_packet, parse_packet, chunk_packet, encode_neighbour_tuple, \
     decode_neighbour_bytes, payload_conv_iter
 
+class NodeNotFoundError(Exception):
+    pass
 
 class Mesh: # pylint: disable=too-many-instance-attributes
     """
@@ -28,6 +30,8 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         """
         Initialize the Mesh instance.
         """
+        cfg = get_config()
+
         self._sequence: int = 0
         self._ttl: int = DEFAULT_TTL
         self._node_id: int = UNDEFINED_NODE_ID
@@ -49,6 +53,9 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         self._seen_packets = set()
         self._seen_limit = 100
         self._seen_queue = RingBuffer(self._seen_limit + 1)
+
+
+        self._gateway = bool(cfg.get(MESH_GATEWAY)) if not None else False
 
     # Helper section ---------------------------------------------------------
 
@@ -148,15 +155,31 @@ class Mesh: # pylint: disable=too-many-instance-attributes
     #
     # - neighbor entry -> tuple (node_id, mac, version, seq, ts, rssi, gateway)
 
+    @staticmethod
+    def process_neighbor_entry(from_node_id:int,from_mac:bytes,entry: tuple[int,bytes,int,int,int,int,int]):
+        """
+        Basically extracting target and setting how to get to it.
 
-    def _add_neighbor(self, entry) -> None:
+        :param from_node_id:
+        :param from_mac:
+        :param entry: The receiver neighbor entry.
+
+        :returns: key (target node_id) , entry (information about target and how to reach it)
+        """
+        _key = entry[0]
+        _ne = (from_node_id,from_mac) + entry[1:]
+
+        return _key, _ne
+
+
+    def _add_neighbor(self,key:int, entry) -> None:
         """
         Add a neighbor to the known dict.
         """
-        if entry[0] == self.node_id():
+        if key == self.node_id():
             return
         logger().debug(f"Adding neighbor: {entry}")
-        self._neighbors[entry[0]] = entry
+        self._neighbors[key] = entry
 
     def _get_neighbour(self, node_id: int):
         """
@@ -209,7 +232,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
             self._peers.put(mac)
             self._esp.add_peer(mac)
 
-    def _peer(self, peer) -> tuple[int, bytes]:
+    def _peer(self, peer:int|bytes) -> tuple[int, bytes]:
         """
         Get a peer by node id or MAC address.
         :param peer:
@@ -270,7 +293,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         rssi , ts = self.get_rssi(host)
 
         if not self._is_neighbor(src):
-            self._add_neighbor((src, host, version, seq, ts, rssi,gateway))
+            self._add_neighbor(src,(src, host, version, seq, ts, rssi,gateway))
 
         else:
             self._update_neighbor(src, (src, host, version, seq, ts, rssi, gateway))
@@ -279,6 +302,11 @@ class Mesh: # pylint: disable=too-many-instance-attributes
 
 
     # Security section ----------------------------------------------------------------
+    # Core idea is symmetric cipher.
+    # But as encryption only happens when the devices register each other we plan to implement software level encryption.
+    # Meaning all devices with same key can safely broadcast, multicast or singlecast.
+    # This trusted device approach is simple and may need revision after its testing phase.
+    # TODO: Implement actual working encryption.
 
     @staticmethod
     def _is_pmk_valid(pmk: bytes|bytearray|str) -> bool:
@@ -301,6 +329,53 @@ class Mesh: # pylint: disable=too-many-instance-attributes
             _pmk_l = PMK_DEFAULT_KEY
 
         self._esp.set_pmk(_pmk_l)
+
+    # Routing section ----------------------------------------------------------------------
+    #
+    # For no routing is:
+    # Before development of this logic an already better algorithm is planned.
+    #
+    # Algorithm Idea:
+    # As the send method needs a mac-address or needs to broadcast to all peers, we have to plug in a pre-defining target layer.
+    # Hence, we incorporate a decision tree:
+    #
+    # Desired target in range?
+    #
+    # YES -> send directly
+    #
+    # NO:
+    # Do I have any neighbors who might now the target?
+    #
+    # YES -> send to them
+    # NO -> Broadcast to all
+    #
+
+    def target(self,dst_node_id: int, not_found_error: bool = False) -> bytes:
+        """
+        Return the mac address to reach a certain target with dst_node_id.
+
+        :param dst_node_id: The node_id of the desired target to send the message to.
+        :param not_found_error: When True it throws an error instead of Broadcasting when target is not in neighbor list.
+        """
+        if not self._is_node_id(dst_node_id):
+            raise ValueError(f"Destination node_id: {dst_node_id} is not valid node_id.")
+
+        if dst_node_id == self.node_id():
+            raise ValueError("Cannot send to self")
+
+        if self._is_neighbor(dst_node_id):
+            _ , mac = self._peer(dst_node_id)
+            return mac
+
+        if not_found_error:
+            raise NodeNotFoundError(
+            f"Node dst_node_id: {dst_node_id} not found."
+            "\nConsider using wait_for_hello_ack / async_wait_for_hello_ack"
+            "to ensure target is registered neighbor."
+            "\nOr set not_found_error to False to broadcast in this case."
+            )
+
+        return BROADCAST_ADDR_MAC
 
     # Messaging section --------------------------------------------------------------------
 
@@ -338,9 +413,6 @@ class Mesh: # pylint: disable=too-many-instance-attributes
 
         await self._esp.asend(addr, packet, ack)
 
-    async def _async_resend(self,):
-        pass
-
 
     async def _irq(self, host: bytes|bytearray, msg: bytes|bytearray) -> None:
         """
@@ -355,6 +427,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
             return
         _version, _ptype, _src, _dst, _seq, _ttl, _flags, _plen, _payload = parsed
 
+        logger().debug(f"RX packet dst={_dst}, me={self.node_id()}")
 
         # Return if packet is from self
         if _src == self.node_id():
@@ -388,13 +461,13 @@ class Mesh: # pylint: disable=too-many-instance-attributes
             neighbors = decode_neighbour_bytes(_payload)
             logger().debug(f"Neighbors: {neighbors}")
             for n in neighbors:
-                self._add_neighbor(tuple(n))
+                self._add_neighbor(*self.process_neighbor_entry(_src,host,tuple(n)))
             return
 
 
 
-        # FORWARD if not for us
-        if _dst != self.node_id() and (_ptype == MESH_TYPE_DATA or _ptype == MESH_TYPE_HELLO_ACK):
+        # FORWARD if not for us and not Broadcast
+        if _dst != self.node_id() and _dst != BROADCAST_ADDR and (_ptype == MESH_TYPE_DATA or _ptype == MESH_TYPE_HELLO_ACK):
             logger().debug("Forwarding")
             if _ttl > 1:
                 _ttl -= 1
@@ -444,7 +517,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
             except Exception as e:
                 logger().error(f"Mesh receive error in callback: {e}")
 
-    def _hello(self) -> tuple[bytearray, str]:
+    def _hello(self) -> tuple[bytearray, bytes]:
         """
         Build a hello packet.
         :return:  (packet,addr)
@@ -456,7 +529,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         # Build hello packet
         return build_packet(MESH_TYPE_HELLO, self.node_id(), BROADCAST_ADDR,
                             self._sequence, self._ttl,MESH_FLAG_BCAST | MESH_FLAG_ACK
-                            | MESH_FLAG_UNSECURE, b""), BROADCAST_ADDR_MAC
+                            | MESH_FLAG_UNSECURE, b"",self._gateway), BROADCAST_ADDR_MAC
 
     def hello(self) -> None:
         """
@@ -543,34 +616,37 @@ class Mesh: # pylint: disable=too-many-instance-attributes
             await asyncio.sleep(0.05)  # small delay to yield CPU
         return True
 
-    def send_data(self,peer: int|bytes|bytearray,payload: str|bytearray|bytes) -> None:
+    def send_data(self,dst_node_id: int,payload: str|bytearray|bytes,not_found_error: bool = False) -> None:
         """
         Send a data packet/packets.
-        :param peer:
+        :param dst_node_id: The target which the message should be sent to.
         :param payload:
+        :param not_found_error: Weather to throw an error if target is unavailable. If off at this case it is Broadcasted.
         :return:
         """
-        _dst_node_id , _mac = self._peer(peer)
+
+        _mac = self.target(dst_node_id,not_found_error)
 
         for _p in payload_conv_iter(payload):
             self._up_sequence()
-            _pb = build_packet(MESH_TYPE_DATA, self.node_id(), _dst_node_id , self._sequence, self._ttl, MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE, _p)
+            _pb = build_packet(MESH_TYPE_DATA, self.node_id(), dst_node_id , self._sequence, self._ttl, MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE, _p,self._gateway)
 
             self._send(_pb, _mac , True)
 
 
-    async def async_send_data(self,peer: int|bytes|bytearray,payload: str|bytearray|bytes) -> None:
+    async def async_send_data(self,dst_node_id: int,payload: str|bytearray|bytes,not_found_error:bool = False) -> None:
         """
         Send a data packet/packets.
-        :param peer:
+        :param dst_node_id:
         :param payload:
+        :param not_found_error: Weather to throw an error if target is unavailable. If off at this case it is Broadcasted.
         :return:
         """
-        _dst_node_id , _mac = self._peer(peer)
+        _mac = self.target(dst_node_id,not_found_error)
 
         for _p in payload_conv_iter(payload):
             self._up_sequence()
-            _pb = build_packet(MESH_TYPE_DATA, self.node_id(), _dst_node_id , self._sequence, self._ttl, MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE, _p)
+            _pb = build_packet(MESH_TYPE_DATA, self.node_id(), dst_node_id , self._sequence, self._ttl, MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE, _p,self._gateway)
 
             await self._async_send(_pb, _mac , True)
 

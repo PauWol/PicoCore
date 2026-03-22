@@ -7,7 +7,7 @@ This module provides utility functions for the PicoCore V2 Comms Mesh module.
 import ustruct as struct
 import ujson
 from ..constants import BASE_HEADER_FORMAT_NO_CRC, BASE_HEADER_SIZE_NO_CRC, MESH_VERSION, MAX_PAYLOAD_SIZE, \
-    MESH_FLAG_PARTIAL_START, MESH_FLAG_PARTIAL_END, MESH_FLAG_PARTIAL
+    MESH_FLAG_PARTIAL_START, MESH_FLAG_PARTIAL_END, MESH_FLAG_PARTIAL, MESH_FLAG_GATEWAY
 from ..crc8 import append_crc8_to_bytearray, verify_crc8
 
 
@@ -44,7 +44,7 @@ def payload_conv_iter(payload: str | bytes | bytearray):
 
 def build_packet(ptype: int, src: int, dst: int, seq: int,
                  # pylint: disable=too-many-arguments,too-many-positional-arguments
-                 ttl: int, flags: int, payload: bytes) -> bytearray:
+                 ttl: int, flags: int, payload: bytes,gateway:bool = False) -> bytearray:
     """
     Build a mesh packet.
     :param ptype: Payload Type
@@ -54,6 +54,7 @@ def build_packet(ptype: int, src: int, dst: int, seq: int,
     :param ttl: Time To Live (hops)
     :param flags: Flags byte
     :param payload: Payload as bytes (0-255 bytes)
+    :param gateway: If true the packet automatically adds MESH_FLAG_GATEWAY
     :return: Packet as bytearray [header+CRC8+payload]
     """
     version = MESH_VERSION
@@ -68,11 +69,18 @@ def build_packet(ptype: int, src: int, dst: int, seq: int,
     assert 0 <= flags <= 255
     assert _plen <= 255
 
-    # Pack header without CRC
-    header = bytearray(struct.pack(BASE_HEADER_FORMAT_NO_CRC,
-                                   version, ptype, src, dst, seq,
-                                   ttl, flags, _plen))
-    # Append CRC8 of header
+    if gateway:
+        # Pack header without CRC
+        header = bytearray(struct.pack(BASE_HEADER_FORMAT_NO_CRC,
+                                       version, ptype, src, dst, seq,
+                                       ttl, flags | MESH_FLAG_GATEWAY, _plen))
+    else:
+        # Pack header without CRC
+        header = bytearray(struct.pack(BASE_HEADER_FORMAT_NO_CRC,
+                                       version, ptype, src, dst, seq,
+                                       ttl, flags, _plen))
+
+        # Append CRC8 of header
     append_crc8_to_bytearray(header)
     # Return final packet
     return header + payload
