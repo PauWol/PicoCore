@@ -9,7 +9,7 @@ from ..config import get_config
 from ..constants import POWER_MONITOR_ENABLED,SLEEP_INTERVAL, EVENT_ROOT_LOOP_BOOT_BEFORE, EVENT_ROOT_LOOP_BOOT_AFTER,MESH_ENABLED
 from ..logging import logger
 from .bus import emit
-from ..util import boot_flag_task
+from ..util import boot_flag_task, timed_function
 from ..comms.mesh import mesh
 
 
@@ -45,14 +45,15 @@ class Task:
             self.next_run = self.last_run + self.interval
         if boot and interval:
             logger().warn(f"Interval {interval} for boot task {name} is ignored: {self.__repr__()}")
+            self.interval = 0
 
 
     @staticmethod
     def _parse_interval(interval: str|int) -> int:
         """
         Parse interval string or integer to integer.
-        Input can be an integer or a string with "ms" , "s" or "h" suffix.
-        :param interval: The execution interval as integer or string ("1ms", "1s", "1h")
+        Input can be an integer or a string with "ms", "s", "min" or "h" suffix.
+        :param interval: The execution interval as integer or string ("1ms", "1s", "1min", "1h")
         :return: The execution interval in ms
         """
         if isinstance(interval, int):
@@ -73,6 +74,7 @@ class Task:
                 raise ValueError("Invalid interval format")
         raise ValueError(f"Invalid interval format {interval}, should be int (ms) or str with 'ms' , 's' or 'h' suffix")
 
+    @timed_function
     def should_run(self, now: int) -> bool:
         """
         Check if the task should run based on its interval.
@@ -113,7 +115,8 @@ class Root:
         # Interval for async sleep in main loop
         self.sleep_interval = self.conf.get(SLEEP_INTERVAL) or 0.1
         self.power_monitor = self.conf.get(POWER_MONITOR_ENABLED) or False
-        self.mesh = self.conf.get(MESH_ENABLED) and sys.platform.startswith("esp32") or False
+        self.mesh = bool(self.conf.get(MESH_ENABLED)) and sys.platform.startswith("esp32") or False
+        self._mesh = None
         self.dynamic_sleep = False
 
 
@@ -144,8 +147,9 @@ class Root:
         self.add(Task("boot_flag_task",boot_flag_task,boot=True,priority=0,enabled=True,parallel=True))
 
         if self.mesh:
+            self._mesh = mesh()
             # mesh task: receive_task
-            self.add(Task("mesh_receive_task",callback=mesh().receive_task,async_task=True,priority=0,enabled=True,parallel=True,boot=True))
+            self.add(Task("mesh_receive_task",callback=self._mesh.receive_task,async_task=True,priority=0,enabled=True,parallel=True,boot=True))
 
     def add(self, _task:Task):
         """
@@ -162,6 +166,7 @@ class Root:
 
         logger().debug(f"Task {_task.name} added to root scheduler")
 
+    @timed_function
     def optimize(self):
         """
         Optimize the root scheduler.
@@ -176,8 +181,13 @@ class Root:
             if not timed_tasks:
                 self.dynamic_sleep = False
                 return
+            # More efficient implementation for:
+            # t = min(t.interval for t in timed_tasks)
+            t = timed_tasks[0].interval
+            for _task in timed_tasks:
+                if _task.interval < t:
+                    t = _task.interval
 
-            t = min(_task.interval for _task in timed_tasks)
             self._min_sleep_time = max(t, self._min_sleep_time)
 
             if all(_task.interval % t == 0 for _task in timed_tasks):
@@ -217,7 +227,7 @@ class Root:
         """
 
         # If mesh expects traffic, do NOT deep/light sleep
-        if self.mesh and mesh().rx_expected():
+        if self.mesh and self._mesh.rx_expected():
             # short cooperative sleep only
             await async_sleep(self.sleep_interval)
             return
@@ -226,13 +236,20 @@ class Root:
             lightsleep(self._min_sleep_time)
 
             if self.dynamic_sleep:
-                self._min_sleep_time = min(self._time_proposal_buffer)
+                if len(self._time_proposal_buffer):
+                    self._min_sleep_time = min(self._time_proposal_buffer)
                 self._time_proposal_buffer.clear()
 
             # TODO: Add deepsleep support with state saving
         else:
             await async_sleep(self.sleep_interval)
 
+    @staticmethod
+    async def _wrap_sync(task: Task, now):
+        task.run(now)
+        await async_sleep(0)
+
+    @timed_function
     async def boot(self):
         """
         This method is called as representative of boot for root and thus run all tasks marked as boot tasks.
@@ -248,7 +265,10 @@ class Root:
                 # synchronous await for async tasks that should run before boot continues
                 await _task.run_async(now)
             elif _task.parallel:
-                create_task(_task.run_async(now))
+                if _task.async_task:
+                    create_task(_task.run_async(now))
+                else:
+                    create_task(self._wrap_sync(_task, now))
             else:
                 _task.run(now)
 
@@ -264,25 +284,36 @@ class Root:
         The root main execution loop running all tasks (excluded boot marked ones)
         :return:
         """
+
+        # Pre-bind functions to save lookup times
+        ticks_ms_ = ticks_ms
+        ticks_diff_ = ticks_diff
+        create_task_ = create_task
+        #buffer_put = self._time_proposal_buffer.put
+        tasks = self._tasks
+
         if self.dynamic_sleep:
             self._time_proposal_buffer = RingBuffer(len(self._tasks),True)
 
         while self.running:
-            now = ticks_ms()
+            now = ticks_ms_()
 
-            for _task in self._tasks:
+            for _task in tasks:
                 if _task.should_run(now):
-                    if _task.async_task:
+                    if _task.parallel:
+                        if _task.async_task:
+                            create_task_(_task.run_async(now))
+                        else:
+                            create_task_(self._wrap_sync(_task, now))
+                    elif _task.async_task:
                         await _task.run_async(now)
-                    elif _task.parallel:
-                        create_task(_task.run_async(now))
                     else:
                         _task.run(now)
 
                 if self.dynamic_sleep:
-                    t = ticks_diff(_task.next_run,now)
+                    t = ticks_diff_(_task.next_run,now)
                     t = max(t,0)
-                    self._time_proposal_buffer.put(t)
+                    self._time_proposal_buffer.put(t) #buffer_put(t)
             await self.sleep()
 
     def run(self):

@@ -19,6 +19,7 @@ Usage:
     start()
 """
 import time
+import asyncio
 from machine import Pin
 from . import config
 from .root import root , start , task , on , bus , emit , manual , off, stop
@@ -26,12 +27,12 @@ from . import io
 from . import logging
 from . import constants
 from .util import (version , uuid , uptime , _file_exists , BOOT_FLAG ,
-                   _remove_boot_flag , _create_boot_flag,ONBOARD_LED)
+                   _remove_boot_flag , _create_boot_flag,ONBOARD_LED, timed_function)
 from .comms import crc8
 
 __all__ = ['version', 'uuid','root','init','uptime','io','logging',
            'constants','config','task','on','bus','emit','manual',
-           'off','start','ONBOARD_LED'
+           'off','start','ONBOARD_LED', 'timed_function'
         ]
 
 
@@ -64,7 +65,7 @@ def check_double_boot_and_maybe_enter_safe_mode():
 
     return False
 
-
+@timed_function
 def init():
     """
     Initialize PicoCore.All boot time configuration is executed here.
@@ -81,11 +82,7 @@ def init():
 
     led = io.Led(ONBOARD_LED, Pin.OUT)
 
-    for _ in range(3):
-        led.toggle()
-        time.sleep(0.2)
-        led.toggle()
-        time.sleep(0.2)
+    asyncio.run(led.async_blink(6,0.2))
 
     led.off()
 

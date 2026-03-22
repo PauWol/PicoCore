@@ -153,6 +153,8 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         """
         Add a neighbor to the known dict.
         """
+        if entry[0] == self.node_id():
+            return
         logger().debug(f"Adding neighbor: {entry}")
         self._neighbors[entry[0]] = entry
 
@@ -386,10 +388,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
             neighbors = decode_neighbour_bytes(_payload)
             logger().debug(f"Neighbors: {neighbors}")
             for n in neighbors:
-                n = tuple(n)
-                if n[0] == self.node_id():
-                    continue
-                self._add_neighbor(n)
+                self._add_neighbor(tuple(n))
             return
 
 
