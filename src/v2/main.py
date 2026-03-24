@@ -22,11 +22,10 @@ async def hell():
     await mesh().async_hello()
     print("hello sent")
 
-node_id = 25892
-
-@task("2s",False)
-def dat():
-    mesh().send_data(node_id,"TEST")
+@task("8s",False)
+def stat():
+    print(mesh().stats())
+    print(mesh()._neighbors)
 
 
 start()

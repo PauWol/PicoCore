@@ -3,7 +3,7 @@ PicoCore V2 Comms Mesh Main
 
 This module provides the PicoCore V2 Comms Mesh main class.
 """
-import time
+import time,gc
 from network import WLAN, STA_IF
 from aioespnow import AIOESPNow
 import uasyncio as asyncio
@@ -38,6 +38,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         self._on_recv = None
 
         self._started: bool = False
+        self._starting = False
         self._wlan: WLAN | None = None
         self._esp: AIOESPNow | None = None
         self._neighbors = {} # TODO: Maybe add fixed leng dict with * MAX_NEIGHBORS
@@ -150,13 +151,38 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         return False
 
     # Neighbor section -----------------------------------------------------------------
-    # TODO: Review neighbor and routing logic as it may lead to runtime errors if sending to indirect neighbor node that is out of range
+    #
     # Data structures:
     #
-    # - neighbor entry -> tuple (node_id, mac, version, seq, ts, rssi, gateway)
+    # - neighbor entry -> node_id : tuple (node_id, mac, version, seq, ts, rssi, gateway)
+    # - route entry -> node_id : node_id, score
+    # TODO: Remove routes dict solution as it implies to much RAM usage. Rely on previous neighbor table by introducing none atomic data structure.
+    #  Meaning the indirect neighbors only store a quality score and which direct neighbor to use to get to it.
+    #  The score is used to determine whether to keep or replace a route up on new data.
 
     @staticmethod
-    def process_neighbor_entry(from_node_id:int,from_mac:bytes,entry: tuple[int,bytes,int,int,int,int,int]):
+    def score(x, now):
+        """
+        Create a score for a set of values.
+        A higher score is better
+        """
+        # x = (timestamp, rssi, is_gateway)
+        ts = x[0]
+        rssi = x[1]
+        is_gw = x[2]
+
+        # age penalty (older = worse)
+        age = time.ticks_diff(now,ts)
+
+        # weights (tune these!)
+        gw_bonus = 20 if is_gw else 0
+        rssi_weight = rssi  # already negative scale
+        age_penalty = age * 0.1  # small decay
+
+        return rssi_weight + gw_bonus - age_penalty
+
+    @staticmethod
+    def process_route_entry(from_node_id:int,from_mac:bytes,entry: tuple[int,bytes,int,int,int,int,int]):
         """
         Basically extracting target and setting how to get to it.
 
@@ -170,6 +196,51 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         _ne = (from_node_id,from_mac) + entry[1:]
 
         return _key, _ne
+
+    @staticmethod
+    def _is_direct(key:int,entry):
+        return key == entry[0]
+
+    def _add_received_neighbor(self,key:int, entry):
+        """
+        Add a neighbor's neighbor.
+
+        Note: entry[0] is the node_id of the node sending the data, meaning only the knowledge that the node sending me the data knows the destination is embedded
+        """
+        if key == self.node_id():
+            return
+
+        _entry =  self._neighbors.get(key)
+
+        if _entry is None:
+        # New neighbor is unknown
+
+            now = time.ticks_ms()
+            if self._is_direct(key,entry):
+                # If I don't know a direct neighbor sent to me -> it has to be one of the sender that's out of my reach.
+                # Meaning I have now gained an indirect route using a direct, thus the direct and score is stored.
+                self._neighbors[key] = (entry[0] , self.score(entry[4:],now))
+                return
+
+            self._neighbors[key] = entry
+            return
+
+        # Return if already direct route exsists
+        if _entry and self._is_direct(key,_entry):
+            return
+
+        now = time.ticks_ms()
+        _ns = self.score(entry[4:],now)
+
+        # If the new route is better than the old indirect route use the new
+        if _entry and _entry[1] < _ns:
+            self._neighbors[key] = (_entry[0],_ns)
+            return
+
+
+
+
+
 
 
     def _add_neighbor(self,key:int, entry) -> None:
@@ -461,7 +532,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
             neighbors = decode_neighbour_bytes(_payload)
             logger().debug(f"Neighbors: {neighbors}")
             for n in neighbors:
-                self._add_neighbor(*self.process_neighbor_entry(_src,host,tuple(n)))
+                self._add_received_neighbor(*self.process_route_entry(_src,host,tuple(n)))
             return
 
 
@@ -653,53 +724,60 @@ class Mesh: # pylint: disable=too-many-instance-attributes
     # Mesh Runtime section -----------------------------------------------------------
 
     def start(self) -> None:
-        """
-        Start the mesh.
-        This will initialize the ESPNow and add the broadcast peer.
-        :return:
-        """
-        if self._started:
+        print("START CALLED", self._started, self._starting)
+        if self._started or self._starting:
             return
 
-        self._wlan = WLAN(STA_IF)
-        self._wlan.active(True)
-        self._wlan.disconnect()
+        self._starting = True
 
-        self._esp = AIOESPNow()
+        try:
+            gc.collect()
 
-        self._esp.active(True)
+            if self._wlan is None:
+                self._wlan = WLAN(STA_IF)
 
-        _conf = get_config()
+            if not self._wlan.active():
+                self._wlan.active(True)
+                self._wlan.disconnect()
 
-        _secret = str(_conf.get(MESH_SECRET))
+            if self._esp is None:
+                self._esp = AIOESPNow()
+                self._esp.active(True)
+                #self._esp.config(rxbuf=4)
 
-        if _secret:
-            time.sleep_ms(200)
-            self._update_pmk(_secret)
+            _conf = get_config()
+            _secret = str(_conf.get(MESH_SECRET))
 
-        # Add broadcast peer
-        self._add(BROADCAST_ADDR_MAC)
+            if _secret:
+                time.sleep_ms(200)
+                self._update_pmk(_secret)
 
-        self._started = True
-        self.node_id() #<-- force node id to be set
+            self._add(BROADCAST_ADDR_MAC)
 
+            self._started = True
+            self.node_id() # Important <-- force setting id
+
+        finally:
+            self._starting = False
 
     def stop(self):
-        """
-        Stop the mesh.
-        This will turn off espnow and wlan.
-        :return:
-        """
         if not self._started:
             return
 
         self.rx_disable()
-        self._esp.active(False)
-        self._wlan.active(False)
 
-        #reset states
+        if self._esp:
+            self._esp.active(False)
+            self._esp = None  # 🔥 IMPORTANT
+
+        if self._wlan:
+            self._wlan.active(False)
+            self._wlan = None  # 🔥 IMPORTANT
+
         self._receiving = False
         self._started = False
+
+        gc.collect()  # 🔥 reclaim heap
 
     def rx_enable(self, listen_ms: int | None = None):
         """
@@ -757,7 +835,8 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         This is the receive task.
         :return:
         """
-        self.start()
+        if not self._started:
+            self.start()
         while True:
             if not self._rx_enabled:
                 # nothing expected → idle cheaply
