@@ -724,7 +724,12 @@ class Mesh: # pylint: disable=too-many-instance-attributes
     # Mesh Runtime section -----------------------------------------------------------
 
     def start(self) -> None:
-        print("START CALLED", self._started, self._starting)
+        """
+        Start the mesh.
+        This will initialize the ESPNow and add the broadcast peer.
+        :return:
+        """
+        logger().debug(f"START CALLED {self._started}, {self._starting}")
         if self._started or self._starting:
             return
 
@@ -768,16 +773,16 @@ class Mesh: # pylint: disable=too-many-instance-attributes
 
         if self._esp:
             self._esp.active(False)
-            self._esp = None  # 🔥 IMPORTANT
+            self._esp = None
 
         if self._wlan:
             self._wlan.active(False)
-            self._wlan = None  # 🔥 IMPORTANT
+            self._wlan = None
 
         self._receiving = False
         self._started = False
 
-        gc.collect()  # 🔥 reclaim heap
+        gc.collect()
 
     def rx_enable(self, listen_ms: int | None = None):
         """

@@ -42,6 +42,7 @@ async def _delayed_clear_boot_flag():
     await asyncio.sleep_ms(BOOT_WINDOW_MS)
     _remove_boot_flag()
 
+#TODO: replace this with other more efficient logic. May use a hardware pin to  set it
 async def boot_flag_task():
     """
     This function checks if the boot flag file exists and if it does,

@@ -129,7 +129,7 @@ class Root:
         # time for actual light- or later deepsleep
         self._min_sleep_time = 100 # ms
 
-        logger().debug(self.__repr__())
+        logger().debug("Root initialized")
         self._init_system_tasks()
 
     def __repr__(self):
@@ -150,6 +150,8 @@ class Root:
             # mesh task: receive_task
             self.add(Task("mesh_receive_task",callback=self._mesh.receive_task,async_task=True,priority=0,enabled=True,parallel=True,boot=True))
 
+        self.optimize()
+
     def add(self, _task:Task):
         """
         Add a task to the root scheduler.
@@ -161,7 +163,7 @@ class Root:
         else:
             self._tasks.append(_task)
 
-        self.optimize()
+
 
         logger().debug(f"Task {_task.name} added to root scheduler")
 
@@ -171,30 +173,32 @@ class Root:
         Optimize the root scheduler.
         :return:
         """
-        self._boot_tasks.sort(key=lambda x: x.priority)
+        # sort ONLY if needed
         self._tasks.sort(key=lambda x: x.priority)
 
-        if self.power_monitor:
-            timed_tasks = [t for t in self._tasks if t.interval > 0]
+        if not self.power_monitor:
+            return
 
-            if not timed_tasks:
-                self.dynamic_sleep = False
-                return
-            # More efficient implementation for:
-            # t = min(t.interval for t in timed_tasks)
-            t = timed_tasks[0].interval
-            for _task in timed_tasks:
-                if _task.interval < t:
-                    t = _task.interval
+        t = None
 
-            self._min_sleep_time = max(t, self._min_sleep_time)
+        for task in self._tasks:
+            if task.interval > 0:
+                if t is None or task.interval < t:
+                    t = task.interval
 
-            if all(_task.interval % t == 0 for _task in timed_tasks):
-                self.dynamic_sleep = True
-            else:
-                self.dynamic_sleep = False
+        if t is None:
+            self.dynamic_sleep = False
+            return
 
-                #TODO: Maybe add else = false
+        self._min_sleep_time = max(t, self._min_sleep_time)
+
+        aligned = True
+        for task in self._tasks:
+            if task.interval > 0 and task.interval % t != 0:
+                aligned = False
+                break
+
+        self.dynamic_sleep = aligned
 
         logger().debug("Root scheduler optimized")
 
@@ -283,7 +287,7 @@ class Root:
         The root main execution loop running all tasks (excluded boot marked ones)
         :return:
         """
-
+        self.optimize()
         # Pre-bind functions to save lookup times
         ticks_ms_ = ticks_ms
         ticks_diff_ = ticks_diff
@@ -334,6 +338,7 @@ class Root:
 
 _root: Root|None = None
 
+@timed_function
 def root() -> Root:
     """
     This returns the root instance of PicoCore Root.

@@ -39,6 +39,7 @@ __all__ = ['version', 'uuid','root','init','uptime','io','logging',
 
 
 # call this from boot.py (early) or from Root.boot() before starting scheduler
+@timed_function
 def check_double_boot_and_maybe_enter_safe_mode():
     """
     Usage:
@@ -55,7 +56,10 @@ def check_double_boot_and_maybe_enter_safe_mode():
         return True
 
     # otherwise create the flag and schedule a deferred removal
-    _create_boot_flag()
+    @task(None, async_task=True, boot=True, parallel=True)
+    async def create_boot_flag_task():
+        _create_boot_flag()
+        await asyncio.sleep(0)
 
     # schedule deletion after BOOT_WINDOW_MS inside event loop.
     # We cannot create uasyncio tasks safely from here if event loop not running.
@@ -65,6 +69,17 @@ def check_double_boot_and_maybe_enter_safe_mode():
     return False
 
 @timed_function
+def init_con():
+    config.get_config("config.toml")
+
+@timed_function
+def init_log():
+    logging.init_logger()
+
+@timed_function
+def led_init():
+    return io.Led(ONBOARD_LED, Pin.OUT)
+@timed_function
 def init():
     """
     Initialize PicoCore.All boot time configuration is executed here.
@@ -72,18 +87,20 @@ def init():
     :return:
     """
     # Get/Initiate config
-    config.get_config("config.toml")
+    init_con()
+
     # Initiate logging
-    logging.init_logger()
+    init_log()
     # Initiate root
     root()
     safe_boot = check_double_boot_and_maybe_enter_safe_mode()
 
-    led = io.Led(ONBOARD_LED, Pin.OUT)
+    led = led_init()
 
-    asyncio.run(led.async_blink(6,0.2))
-
-    led.off()
+    #shedule root loop boot blink
+    @task(None, async_task=True, boot=True, parallel=True)
+    async def boot_led():
+        await led.async_blink(6, 0.2)
 
     if safe_boot:
         led.on()
