@@ -6,38 +6,26 @@ This module provides utility functions for the PicoCore V2 Comms Mesh module.
 
 import ustruct as struct
 import ujson
-from ..constants import BASE_HEADER_FORMAT_NO_CRC, BASE_HEADER_SIZE_NO_CRC, MESH_VERSION, MAX_PAYLOAD_SIZE, \
+from core.comms.constants import BASE_HEADER_FORMAT_NO_CRC, BASE_HEADER_SIZE_NO_CRC, MESH_VERSION, MAX_PAYLOAD_SIZE, \
     MESH_FLAG_PARTIAL_START, MESH_FLAG_PARTIAL_END, MESH_FLAG_PARTIAL, MESH_FLAG_GATEWAY
-from ..crc8 import append_crc8_to_bytearray, verify_crc8
+from core.comms.crc8 import append_crc8_to_bytearray, verify_crc8
 
 
 def payload_conv(payload: str | bytes | bytearray):
     """
     Convert payload to bytes.
     :param payload:
-    :param _iter: If True, return a generator for large payloads (>MAX_PAYLOAD_SIZE=239)
     :return: bytes or generator
     """
-    _p = b""
-    if isinstance(payload, str):
-        _p = payload.encode()
-    else:
-        _p = payload
-
-    return _p
+    return payload.encode() if isinstance(payload, str) else payload
 
 def payload_conv_iter(payload: str | bytes | bytearray):
     """
     Convert payload to bytes.
     :param payload:
-    :param _iter: If True, return a generator for large payloads (>MAX_PAYLOAD_SIZE=239)
     :return: bytes or generator
     """
-    _p = b""
-    if isinstance(payload, str):
-        _p = payload.encode()
-    else:
-        _p = payload
+    _p = payload.encode() if isinstance(payload, str) else payload
 
     for i in range(0, len(_p), MAX_PAYLOAD_SIZE):
         yield _p[i:i + MAX_PAYLOAD_SIZE]

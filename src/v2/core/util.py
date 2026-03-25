@@ -149,7 +149,7 @@ def version() -> list[str]|None:
     _v_path = "/core/.version"
     try:
         if os.stat(_v_path)[6] >= 13:
-            with open(_v_path, "r",encoding="utf-8") as version_file:
+            with open(_v_path,encoding="utf-8") as version_file:
                 return version_file.read().strip().replace("\r", "").split("\n")
         else:
             raise ValueError("Version file could not be read."

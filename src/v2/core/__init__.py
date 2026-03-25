@@ -18,24 +18,46 @@ Usage:
 
     start()
 """
+
 import asyncio
 from machine import Pin
 from . import config
-from .root import root , start , task , on , bus , emit , manual , off, stop
+from .root import root, start, task, on, bus, emit, manual, off, stop
 from . import io
 from . import logging
 from . import constants
-from .util import (version , uuid , uptime , _file_exists , BOOT_FLAG ,
-                   _remove_boot_flag , _create_boot_flag,ONBOARD_LED, timed_function)
-from .comms import crc8
+from .util import (
+    version,
+    uuid,
+    uptime,
+    _file_exists,
+    BOOT_FLAG,
+    _remove_boot_flag,
+    _create_boot_flag,
+    ONBOARD_LED,
+    timed_function,
+)
 
-__all__ = ['version', 'uuid','root','init','uptime','io','logging',
-           'constants','config','task','on','bus','emit','manual',
-           'off','start','ONBOARD_LED', 'timed_function'
-        ]
-
-
-
+__all__ = [
+    "version",
+    "uuid",
+    "root",
+    "init",
+    "uptime",
+    "io",
+    "logging",
+    "constants",
+    "config",
+    "task",
+    "on",
+    "bus",
+    "emit",
+    "manual",
+    "off",
+    "start",
+    "ONBOARD_LED",
+    "timed_function",
+]
 
 
 # call this from boot.py (early) or from Root.boot() before starting scheduler
@@ -68,17 +90,22 @@ def check_double_boot_and_maybe_enter_safe_mode():
 
     return False
 
+
 @timed_function
 def init_con():
     config.get_config("config.toml")
+
 
 @timed_function
 def init_log():
     logging.init_logger()
 
+
 @timed_function
 def led_init():
     return io.Led(ONBOARD_LED, Pin.OUT)
+
+
 @timed_function
 def init():
     """
@@ -86,6 +113,9 @@ def init():
     Needs to be called at the very start of the boot.py file to use benefits of PicoCore.
     :return:
     """
+    import sys
+
+    sys.path.insert(0, "/")
     # Get/Initiate config
     init_con()
 
@@ -97,7 +127,7 @@ def init():
 
     led = led_init()
 
-    #shedule root loop boot blink
+    # schedule root loop boot blink
     @task(None, async_task=True, boot=True, parallel=True)
     async def boot_led():
         await led.async_blink(6, 0.2)

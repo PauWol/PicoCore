@@ -3,18 +3,37 @@ PicoCore V2 Comms Mesh Main
 
 This module provides the PicoCore V2 Comms Mesh main class.
 """
-import time,gc
+import time
+import gc
 from network import WLAN, STA_IF
 from aioespnow import AIOESPNow
 import uasyncio as asyncio
-from ..constants import (MAX_NEIGHBORS, MESH_TYPE_HELLO, MESH_TYPE_HELLO_ACK,
-                         BROADCAST_ADDR, DEFAULT_TTL, MESH_FLAG_UNSECURE, \
-                         MESH_FLAG_BCAST, MESH_FLAG_ACK, UNDEFINED_NODE_ID,
-                         BROADCAST_ADDR_MAC, MESH_FLAG_UNICAST, MESH_TYPE_DATA, \
-                         MAX_PMK_BYTE_LEN, PMK_DEFAULT_KEY, MESH_FLAG_GATEWAY, MESH_FLAG_PARTIAL, MESH_FLAG_PARTIAL_END,
-                         MESH_FLAG_PARTIAL_START
-                         )
-from .. import RingBuffer, logger, get_config, MESH_SECRET,MESH_GATEWAY
+from core.comms.constants import (
+    MAX_NEIGHBORS,
+    MESH_TYPE_HELLO,
+    MESH_TYPE_HELLO_ACK,
+    BROADCAST_ADDR,
+    DEFAULT_TTL,
+    MESH_FLAG_UNSECURE,
+    MESH_FLAG_BCAST,
+    MESH_FLAG_ACK,
+    UNDEFINED_NODE_ID,
+    BROADCAST_ADDR_MAC,
+    MESH_FLAG_UNICAST,
+    MESH_TYPE_DATA,
+    MAX_PMK_BYTE_LEN,
+    PMK_DEFAULT_KEY,
+    MESH_FLAG_GATEWAY,
+    MESH_FLAG_PARTIAL,
+    MESH_FLAG_PARTIAL_END,
+    MESH_FLAG_PARTIAL_START,
+    MESH_CLEAN_INTERVAL,
+    MESH_HELLO_INTERVAL,
+)
+from core.constants import MESH_SECRET,MESH_GATEWAY
+from core.queue import RingBuffer
+from core.logging import logger
+from core.config import get_config
 from .packets import build_packet, parse_packet, chunk_packet, encode_neighbour_tuple, \
     decode_neighbour_bytes, payload_conv_iter
 
@@ -31,6 +50,8 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         Initialize the Mesh instance.
         """
         cfg = get_config()
+
+
 
         self._sequence: int = 0
         self._ttl: int = DEFAULT_TTL
@@ -182,7 +203,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         return rssi_weight + gw_bonus - age_penalty
 
     @staticmethod
-    def process_route_entry(from_node_id:int,from_mac:bytes,entry: tuple[int,bytes,int,int,int,int,int]):
+    def process_route_entry(from_node_id:int,from_mac:bytes,entry: tuple):
         """
         Basically extracting target and setting how to get to it.
 
@@ -225,7 +246,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
             self._neighbors[key] = entry
             return
 
-        # Return if already direct route exsists
+        # Return if already direct route exists
         if _entry and self._is_direct(key,_entry):
             return
 
@@ -299,7 +320,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         :param mac:
         :return:
         """
-        if not mac in self._peers:
+        if mac not in self._peers:
             self._peers.put(mac)
             self._esp.add_peer(mac)
 
@@ -317,8 +338,12 @@ class Mesh: # pylint: disable=too-many-instance-attributes
                     "\nConsider using wait_for_hello_ack / async_wait_for_hello_ack "
                     "to ensure target is registered neighbor"
                                  )
+            if len(entry) == 2:
+                logger().debug(f"Getting direct mac for indirect entry: {entry}")
+                return self._get_neighbour(entry[0])
 
             node_id, mac, _, _, _, _, _ = entry
+            logger().debug(f"Returning direct neighbor: {node_id}")
             return node_id, mac
 
         if self.is_mac(peer):
@@ -331,7 +356,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
 
     def node_id(self, mac: bytes | bytearray= None) -> int:
         """
-        Get the Node id of this instance or from input mac if provided.
+        Get the Node id of this instance or from input MAC if provided.
         :param mac: The host as bytes or bytearray
         :return:  The node id as int
         """
@@ -435,6 +460,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
             raise ValueError("Cannot send to self")
 
         if self._is_neighbor(dst_node_id):
+            logger().debug(f"{dst_node_id} is neighbor")
             _ , mac = self._peer(dst_node_id)
             return mac
 
@@ -466,6 +492,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         self._add(addr)
 
         self._esp.send(addr, packet, ack)
+        time.sleep_ms(5)
 
     async def _async_send(self, packet, addr, ack: bool = True) -> None:
         """
@@ -483,7 +510,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         self._add(addr)
 
         await self._esp.asend(addr, packet, ack)
-
+        await asyncio.sleep_ms(5)
 
     async def _irq(self, host: bytes|bytearray, msg: bytes|bytearray) -> None:
         """
@@ -492,7 +519,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         :param msg:
         :return:
         """
-
+        #TODO: Update this function for efficiency repeated node id calls etc -> pre-allocate etc.
         parsed = parse_packet(msg)
         if not parsed:
             return
@@ -506,9 +533,8 @@ class Mesh: # pylint: disable=too-many-instance-attributes
 
         key = (_src, _seq)
         # DROP duplicates if not partial
-        if not (_flags & MESH_FLAG_PARTIAL):
-            if self._seen(*key):
-                return
+        if not (_flags & MESH_FLAG_PARTIAL) and self._seen(*key):
+            return
 
         if _flags & MESH_FLAG_GATEWAY:
             self.device_registry(host,_src,_version,_seq,True)
@@ -538,7 +564,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
 
 
         # FORWARD if not for us and not Broadcast
-        if _dst != self.node_id() and _dst != BROADCAST_ADDR and (_ptype == MESH_TYPE_DATA or _ptype == MESH_TYPE_HELLO_ACK):
+        if _dst != self.node_id() and _dst != BROADCAST_ADDR and _ptype in (MESH_TYPE_DATA,MESH_TYPE_HELLO_ACK):
             logger().debug("Forwarding")
             if _ttl > 1:
                 _ttl -= 1
@@ -549,7 +575,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
                 )
 
                 # broadcast forward (simple flooding)
-                self._esp.send(BROADCAST_ADDR_MAC, fwd_packet, False)
+                self._esp.send(self.target(_dst), fwd_packet, False)
 
             return
 
@@ -581,7 +607,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
                     await self._on_recv((host, _src), _payload)
             except TypeError as e:
                 logger().error( "Hint: Mesh callback must be async and use 'async def'"
-                                "Note: ensure the function contains at least one 'await' " 
+                                "Note: ensure the function contains at least one 'await' "
                                 "(e.g. 'await asyncio.sleep(0)') to avoid blocking the scheduler."
                             )
                 logger().error(f"Original Mesh receive error: {e}")
@@ -825,7 +851,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
         Note: The callback function should have the signature: callback(host, msg)
         or callback(*args).
 
-        - host: tuple -> (mac,node_id)
+        - host: tuple -> (MAC,node_id)
         - msg: bytes|bytearray -> payload
 
         :param callback:
@@ -837,7 +863,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
 
     async def receive_task(self):
         """
-        This is the receive task.
+        This is the reception task. (DEPRECATED)
         :return:
         """
         if not self._started:
@@ -856,14 +882,61 @@ class Mesh: # pylint: disable=too-many-instance-attributes
                 logger().error(f"mesh rx error: {e}")
                 await asyncio.sleep_ms(20)
 
+    async def run(self):
+        """
+        Unified mesh runtime loop:
+        - receive packets
+        - send heartbeat (HELLO)
+        - cleanup neighbors
+        """
 
+        #pre-allocate to save lookup time
+        _ticks_diff = time.ticks_diff
+        _ticks_ms = time.ticks_ms
+        _sleep_ms = asyncio.sleep_ms
+        _airecv = self._esp.airecv
+        _async_hello = self.async_hello
+        _clean_neighbors = self._cleanup_neighbors
+
+        now = _ticks_ms()
+
+        last_hello = now - (self.node_id() % 2000) # not just time but with jitter -> not all at the same time -> collision
+        last_clean = now
+
+
+        while True:
+            now = _ticks_ms()
+
+            # Receive
+            if self._rx_enabled:
+                try:
+                    host, msg = await _airecv()
+                    if host and msg:
+                        await self._irq(host, msg)
+                except asyncio.TimeoutError:
+                    pass
+                except Exception as e:
+                    logger().error(f"mesh rx error: {e}")
+
+            # Hello
+            if _ticks_diff(now, last_hello) > MESH_HELLO_INTERVAL:
+                await _async_hello()
+                last_hello = now
+
+            # Clean
+            if _ticks_diff(now, last_clean) > MESH_CLEAN_INTERVAL:
+                _clean_neighbors()
+                last_clean = now
+
+            # yield
+            await _sleep_ms(5)
 
     # Information section --------------------------------------------------------------------------------
 
     def stats(self):
         """
         Return mesh statistics.
-        :return: (tx_pkts, tx_responses, tx_failures, rx_packets, rx_dropped_packets, started, receiving, node_id, mac, sequence, registered_neighbors_count)
+        :return: (tx_pkts, tx_responses, tx_failures, rx_packets, rx_dropped_packets, started, receiving, node_id, MAC, sequence, registered_neighbors_count)
         """
         return self._esp.stats(), self._started, self._receiving, self._node_id, self._wlan.config('mac'), self._sequence, len(self._neighbors)
 
@@ -899,4 +972,5 @@ def mesh_callback():
     def deco(fn):
         mesh().callback(fn)
         return fn
+
     return deco

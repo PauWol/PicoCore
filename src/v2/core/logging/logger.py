@@ -14,27 +14,53 @@ Usage:
 import os
 import ustruct
 
-from ..constants import TRACE , INFO , DEBUG , FATAL , ERROR , WARN , LEVEL_NAMES , LOG_FILE_PATH , DATA_FILE_PATH , LEVEL_BYTES , LOGGER_LEVEL ,\
-LOGGER_BUFFER_SIZE , LOGGER_MAX_FILE_SIZE , LOGGER_CONSOLE , LOGGER_FILE_LOG , LOGGER_MAX_ROTATIONS , LEVEL_NAMES_REV
-from ..config import get_config
-from ..util import _file_exists , uptime , create_file
-from ..queue import RingBuffer , ByteRingBuffer
+from core.constants import (
+    TRACE,
+    INFO,
+    DEBUG,
+    FATAL,
+    ERROR,
+    WARN,
+    LEVEL_NAMES,
+    LOG_FILE_PATH,
+    DATA_FILE_PATH,
+    LEVEL_BYTES,
+    LOGGER_LEVEL,
+    LOGGER_BUFFER_SIZE,
+    LOGGER_MAX_FILE_SIZE,
+    LOGGER_CONSOLE,
+    LOGGER_FILE_LOG,
+    LOGGER_MAX_ROTATIONS,
+    LEVEL_NAMES_REV,
+)
+from core.config import get_config
+
+from core.util import _file_exists, uptime, create_file
+from core.queue import RingBuffer, ByteRingBuffer
 
 
 class Logger:
-    def __init__(self,level:int=INFO, buffer_size:int=5, max_file_size:int|str="64kb", console:bool=True, file_log:bool=True, max_rotations:int=3):
+    def __init__(
+        self,
+        level: int = INFO,
+        buffer_size: int = 5,
+        max_file_size: int | str = "64kb",
+        console: bool = True,
+        file_log: bool = True,
+        max_rotations: int = 3,
+    ):
         """
-         Logger class for logging messages to console and file.As well as application data entries.
-         :param level: Can be TRACE, DEBUG, INFO, WARN, ERROR, FATAL  as int-> (0,1,2,3,4,5) use constants for best efficiency
-         :param buffer_size: The size of the log buffer/ data buffer if full the logs/data will be flushed to disk. (45 bytes per log entry; buffer_size * 45 bytes)
-         :param max_file_size: The maximum size of the log- / datafile before it is rotated.
-         :param console: Weather logs should be printed to console
-         :param file_log: Weather logs should be written to file
-         :param max_rotations: The maximum number of log- / datafiles before the oldest is deleted
-         :return:
-         """
+        Logger class for logging messages to console and file.As well as application data entries.
+        :param level: Can be TRACE, DEBUG, INFO, WARN, ERROR, FATAL  as int-> (0,1,2,3,4,5) use constants for best efficiency
+        :param buffer_size: The size of the log buffer/ data buffer if full the logs/data will be flushed to disk. (45 bytes per log entry; buffer_size * 45 bytes)
+        :param max_file_size: The maximum size of the log- / datafile before it is rotated.
+        :param console: Weather logs should be printed to console
+        :param file_log: Weather logs should be written to file
+        :param max_rotations: The maximum number of log- / datafiles before the oldest is deleted
+        :return:
+        """
         self.level = level
-        self.buffer_size = buffer_size # 45 bytes per log entry
+        self.buffer_size = buffer_size  # 45 bytes per log entry
         self.console = console
         self.file_log = file_log
         self.max_bytes = self._parse_size(max_file_size)
@@ -42,8 +68,8 @@ class Logger:
 
         # runtime
         self._orig_level = self.level
-        self._log_buf = ByteRingBuffer(self.buffer_size * 45 )
-        self._data_buf = RingBuffer(self.buffer_size,True)
+        self._log_buf = ByteRingBuffer(self.buffer_size * 45)
+        self._data_buf = RingBuffer(self.buffer_size, True)
 
         self.log_path = LOG_FILE_PATH
         self.data_path = DATA_FILE_PATH
@@ -84,7 +110,7 @@ class Logger:
         return uptime(ms=True)
 
     @staticmethod
-    def _format_timestamp(t:int) -> str:
+    def _format_timestamp(t: int) -> str:
         """
         Format a timestamp in a human-readable format.
         :param t:
@@ -97,7 +123,7 @@ class Logger:
         return f"{d}d {h:02}:{m:02}:{s:02}"
 
     @staticmethod
-    def _format_line_bin(t:int, level_int:int, msg:str) -> bytes:
+    def _format_line_bin(t: int, level_int: int, msg: str) -> bytes:
         """
         Format a log line with timestamp, level and message. -> Binary format
         :param t:
@@ -106,11 +132,11 @@ class Logger:
         :return:
         """
         lvl = LEVEL_BYTES.get(level_int)
-        t =  ustruct.pack('<I', t)
+        t = ustruct.pack("<I", t)
         msg = msg.encode("utf-8")
         return lvl + t + msg
 
-    def _format_line(self,t:int, level_int:int, msg:str) -> str:
+    def _format_line(self, t: int, level_int: int, msg: str) -> str:
         """
         Format a log line with timestamp, level and message. -> Readable format
         :param t:
@@ -121,7 +147,6 @@ class Logger:
         lvl = LEVEL_NAMES.get(level_int)
         t = self._format_timestamp(t)
         return f"{t} | {lvl} | {msg} \n"
-
 
     def _enqueue_log(self, level_int, msg):
         """
@@ -166,8 +191,8 @@ class Logger:
             return
 
         try:
-            with open(self.log_path, 'ab') as f:
-                    f.write(self._log_buf.to_bytes())
+            with open(self.log_path, "ab") as f:
+                f.write(self._log_buf.to_bytes())
             self._log_buf.clear()
             self._rotate_if_needed(self.log_path)
         except OSError as e:
@@ -189,7 +214,7 @@ class Logger:
             self._data_buf.clear()
             self._rotate_if_needed(self.data_path)
         except OSError as e:
-                print("[LOGGER] flush_data OSError:", e)
+            print("[LOGGER] flush_data OSError:", e)
 
     def flush(self):
         """Flush both buffers"""
@@ -197,12 +222,11 @@ class Logger:
         self._flush_data()
 
     def _rotate_if_needed(self, path):
-        size = os.stat(path)[6] if len(os.stat(path)) > 6 else os.stat(path).st_size
-
-        if size:
-            size = os.stat(path)[0]
-        else:
-            size = 0
+        try:
+            stat = os.stat(path)
+            size = stat[6]  # file size
+        except OSError:
+            size = 0  # file doesn't exist
 
         if self.max_bytes <= 0:
             return
@@ -210,19 +234,19 @@ class Logger:
         if size > self.max_bytes:
             # rotate: path -> path.0, path.0 -> path.1 ... up to max_rotations-1
             try:
-                # remove oldest if needed
+                # remove the oldest if needed
                 last = f"{path}.{self.max_rotations - 1}"
                 if _file_exists(last):
-                        os.remove(last)
+                    os.remove(last)
                 for i in range(self.max_rotations - 2, -1, -1):
                     src = f"{path}.{i}" if i > 0 else path
                     dst = f"{path}.{i + 1}"
                     if _file_exists(src):
-                            os.rename(src, dst)
+                        os.rename(src, dst)
             except OSError as e:
-                print("[LOGGER] _rotate_if_needed Exception",e)
+                print("[LOGGER] _rotate_if_needed Exception", e)
 
-    def _should_log(self, level_int:int):
+    def _should_log(self, level_int: int):
         return level_int <= self.level
 
     def trace(self, msg="") -> None:
@@ -298,9 +322,7 @@ class Logger:
           - 'medium' -> WARN
           - 'normal' -> restore original
         """
-        if mode_name == "low":
-            self.level = WARN
-        elif mode_name == "medium":
+        if mode_name == "low" or mode_name == "medium":
             self.level = WARN
         elif mode_name == "normal":
             self.level = self._orig_level
@@ -315,12 +337,21 @@ class Logger:
             "queue_len": len(self._log_buf),
             "data_queue_len": len(self._data_buf),
             "file_log": self.file_log,
-            "console": self.console
+            "console": self.console,
         }
+
 
 _logger_instance: Logger | None = None
 
-def init_logger(level=INFO,buffer_size=5,max_file_size="64kb",console=True,file_log=True,max_rotations=3) -> Logger:
+
+def init_logger(
+    level=INFO,
+    buffer_size=5,
+    max_file_size="64kb",
+    console=True,
+    file_log=True,
+    max_rotations=3,
+) -> Logger:
     """
     Initialize the global logger singleton.
     :param level: Can be TRACE, DEBUG, INFO, WARN, ERROR, FATAL  as int-> (0,1,2,3,4,5) use constants for best efficiency
@@ -331,7 +362,7 @@ def init_logger(level=INFO,buffer_size=5,max_file_size="64kb",console=True,file_
     :param max_rotations: The maximum number of log- / datafiles before the oldest is deleted
     :return:
     """
-    global _logger_instance # pylint: disable=global-statement
+    global _logger_instance  # pylint: disable=global-statement
     if _logger_instance is None:
         cfg = get_config()
         _logger_instance = Logger(
@@ -340,12 +371,13 @@ def init_logger(level=INFO,buffer_size=5,max_file_size="64kb",console=True,file_
             max_file_size=cfg.get(LOGGER_MAX_FILE_SIZE) or max_file_size,
             console=cfg.get(LOGGER_CONSOLE) or console,
             file_log=cfg.get(LOGGER_FILE_LOG) or file_log,
-            max_rotations=cfg.get(LOGGER_MAX_ROTATIONS) or max_rotations
+            max_rotations=cfg.get(LOGGER_MAX_ROTATIONS) or max_rotations,
         )
     return _logger_instance
 
+
 def logger() -> Logger:
-    """Return the global Logger instance (must call init_logger first."""
+    """Return the global Logger instance (must call init_logger first.)"""
     if _logger_instance is None:
         raise RuntimeError("Logger not initialized. Call init_logger() first.")
     return _logger_instance

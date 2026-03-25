@@ -4,13 +4,13 @@ from machine import lightsleep
 import uasyncio
 import sys
 
-from ..queue import RingBuffer
-from ..config import get_config
-from ..constants import POWER_MONITOR_ENABLED,SLEEP_INTERVAL, EVENT_ROOT_LOOP_BOOT_BEFORE, EVENT_ROOT_LOOP_BOOT_AFTER,MESH_ENABLED
-from ..logging import logger
+from core.queue import RingBuffer
+from core.config import get_config
+from core.constants import POWER_MONITOR_ENABLED,SLEEP_INTERVAL, EVENT_ROOT_LOOP_BOOT_BEFORE, EVENT_ROOT_LOOP_BOOT_AFTER,MESH_ENABLED
+from core.logging import (logger)
 from .bus import emit
-from ..util import boot_flag_task, timed_function
-from ..comms.mesh import mesh
+from core.util import boot_flag_task, timed_function
+from core.comms.mesh import mesh
 
 
 """
@@ -70,8 +70,7 @@ class Task:
                 return int(interval[:-3]) * 1000 * 60
             if interval.endswith("h"):
                 return int(interval[:-1]) * 1000 * 60 * 60
-            else:
-                raise ValueError("Invalid interval format")
+
         raise ValueError(f"Invalid interval format {interval}, should be int (ms) or str with 'ms' , 's' or 'h' suffix")
 
     def should_run(self, now: int) -> bool:
@@ -148,7 +147,7 @@ class Root:
         if self.mesh:
             self._mesh = mesh()
             # mesh task: receive_task
-            self.add(Task("mesh_receive_task",callback=self._mesh.receive_task,async_task=True,priority=0,enabled=True,parallel=True,boot=True))
+            self.add(Task("mesh_run_task",callback=self._mesh.run,async_task=True,priority=0,enabled=True,parallel=True,boot=True))
 
         self.optimize()
 
@@ -181,10 +180,9 @@ class Root:
 
         t = None
 
-        for task in self._tasks:
-            if task.interval > 0:
-                if t is None or task.interval < t:
-                    t = task.interval
+        for _task in self._tasks:
+            if _task.interval > 0 and (t is None or _task.interval < t):
+                    t = _task.interval
 
         if t is None:
             self.dynamic_sleep = False
@@ -193,8 +191,8 @@ class Root:
         self._min_sleep_time = max(t, self._min_sleep_time)
 
         aligned = True
-        for task in self._tasks:
-            if task.interval > 0 and task.interval % t != 0:
+        for _task in self._tasks:
+            if _task.interval > 0 and _task.interval % t != 0:
                 aligned = False
                 break
 
@@ -248,8 +246,8 @@ class Root:
             await async_sleep(self.sleep_interval)
 
     @staticmethod
-    async def _wrap_sync(task: Task, now):
-        task.run(now)
+    async def _wrap_sync(_task: Task, now):
+        _task.run(now)
         await async_sleep(0)
 
     @timed_function

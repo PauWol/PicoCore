@@ -25,6 +25,8 @@ Usage (If already initialized):
     config = get_config().get("Class.Sub.key")
     config.set("Class.Sub.key", "new_value")
 """
+
+
 class Config:
     __slots__ = ("path", "data", "_cls", "_sub")
 
@@ -42,7 +44,7 @@ class Config:
         self._cls = None
         self._sub = None
 
-        with open(self.path, "r") as f:
+        with open(self.path) as f:
             for raw in f:
                 line = raw.strip()
                 if not line or line[0] == "#":
@@ -75,7 +77,7 @@ class Config:
                     continue
 
                 key = line[:i].strip()
-                val = self._convert(line[i+1:].strip())
+                val = self._convert(line[i + 1 :].strip())
 
                 if self._sub:
                     self.data[self._cls][self._sub][key] = val
@@ -101,22 +103,18 @@ class Config:
             return False
 
         # remove numeric underscores (MicroPython safe)
-        if "_" in v:
-            v_clean = v.replace("_", "")
-        else:
-            v_clean = v
+        v_clean = v.replace("_", "")
 
         # int (fast path)
-        try:
-            if "." not in v_clean:
+        if "." not in v_clean:
+            try:
                 return int(v_clean)
-        except:
-            pass
+            except ValueError:
+                pass
 
-        # float
         try:
             return float(v_clean)
-        except:
+        except ValueError:
             pass
 
         # list
@@ -194,9 +192,11 @@ class Config:
         d[parts[-1]] = value
         self._save()
 
-_config: Config = None
 
-def get_config(path:str = None):
+_config: Config | None = None
+
+
+def get_config(path: str = None):
     global _config
     if not _config:
         _config = Config(path)

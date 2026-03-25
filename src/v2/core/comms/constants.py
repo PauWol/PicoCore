@@ -59,7 +59,8 @@ BROADCAST_ADDR_MAC: bytes = b'\xff\xff\xff\xff\xff\xff'
 # -------------------------------------------------------------------
 MESH_BACKGROUND_LISTENER_INTERVAL = const(1)
 MESH_BACKGROUND_PRIORITY = const(3)
-
+MESH_CLEAN_INTERVAL = const(10_000)
+MESH_HELLO_INTERVAL = const(30_000)
 
 # Mesh security
 

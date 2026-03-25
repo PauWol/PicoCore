@@ -1,0 +1,37 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors     — spacing, syntax
+    "W",    # pycodestyle warnings   — whitespace, blank lines
+    "F",    # pyflakes               — unused imports, undefined names
+    "N",    # pep8-naming            — class/function/variable naming
+    "UP",   # pyupgrade              — modernise syntax
+    "B",    # flake8-bugbear         — likely bugs and design issues
+    "C4",   # flake8-comprehensions  — unnecessary list/dict constructs
+    "A",    # flake8-builtins        — shadowed built-in names (catches 'type')
+    "SIM",  # flake8-simplify        — simplifiable code patterns
+    "RET",  # flake8-return          — return value consistency
+    "PIE",  # flake8-pie             — misc lints
+    "TID",  # flake8-tidy-imports    — import hygiene
+]
+ignore = [
+    "E501",   # line too long — handled by formatter separately
+    "B008",   # function call in default args — common in MicroPython drivers
+    "UP006",  # use list instead of List — MicroPython typing is limited
+    "UP007",  # use X | Y instead of Union — not available in MicroPython
+]
+unfixable = ["B", "F401"]
+
+[tool.ruff.lint.pep8-naming]
+classmethod-decorators = ["classmethod"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "N"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
