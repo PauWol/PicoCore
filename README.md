@@ -21,7 +21,7 @@ PicoCore simplifies embedded development by combining a structured runtime with 
 
 Comprehensive documentation is available online:
 
- ⇒ https://pauwol.github.io/PicoCore/
+ ⟶ https://pauwol.github.io/PicoCore/
 
 Includes:
 - Getting Started (setup, flashing, first application)  
@@ -35,13 +35,13 @@ Includes:
 
 Follow the setup guide to install PicoCore and run your first program:
 
-👉 https://pauwol.github.io/PicoCore/setup
+⟶ https://pauwol.github.io/PicoCore/setup
 
 ## Releases
 
 Precompiled firmware (`.uf2`) and libraries are available on GitHub:
 
-👉 https://github.com/PauWol/PicoCore/releases
+⟶ https://github.com/PauWol/PicoCore/releases
 
 ## Contributing
 
@@ -52,7 +52,7 @@ Contributions are welcome. You can help by:
 - Improving documentation  
 
 Guidelines:  
-👉 https://pauwol.github.io/PicoCore/contributing/
+⟶ https://pauwol.github.io/PicoCore/contributing/
 
 ## License
 
