@@ -21,7 +21,7 @@ PicoCore simplifies embedded development by combining a structured runtime with 
 
 Comprehensive documentation is available online:
 
-👉 https://pauwol.github.io/PicoCore/
+--> https://pauwol.github.io/PicoCore/
 
 Includes:
 - Getting Started (setup, flashing, first application)  
