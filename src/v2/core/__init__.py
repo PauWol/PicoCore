@@ -22,7 +22,7 @@ Usage:
 import asyncio
 from machine import Pin
 from . import config
-from .root import root, start, task, on, bus, emit, manual, off, stop
+from .root import root, start, task, on, bus, emit, manual, off, stop, add_task
 from . import io
 from . import logging
 from . import constants
@@ -57,6 +57,7 @@ __all__ = [
     "start",
     "ONBOARD_LED",
     "timed_function",
+    "add_task",
 ]
 
 

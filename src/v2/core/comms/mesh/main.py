@@ -525,10 +525,12 @@ class Mesh: # pylint: disable=too-many-instance-attributes
             return
         _version, _ptype, _src, _dst, _seq, _ttl, _flags, _plen, _payload = parsed
 
-        logger().debug(f"RX packet dst={_dst}, me={self.node_id()}")
+        my_id = self.node_id()
+
+        logger().debug(f"RX packet dst={_dst}, me={my_id}")
 
         # Return if packet is from self
-        if _src == self.node_id():
+        if _src == my_id:
            return
 
         key = (_src, _seq)
@@ -552,7 +554,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
                 logger().debug("HELLO_ACK sent")
                 return
 
-        if _ptype == MESH_TYPE_HELLO_ACK and _dst == self.node_id():
+        if _ptype == MESH_TYPE_HELLO_ACK and _dst == my_id:
             logger().debug("HELLO_ACK packet received")
 
             neighbors = decode_neighbour_bytes(_payload)
@@ -564,7 +566,7 @@ class Mesh: # pylint: disable=too-many-instance-attributes
 
 
         # FORWARD if not for us and not Broadcast
-        if _dst != self.node_id() and _dst != BROADCAST_ADDR and _ptype in (MESH_TYPE_DATA,MESH_TYPE_HELLO_ACK):
+        if _dst != my_id and _dst != BROADCAST_ADDR and _ptype in (MESH_TYPE_DATA,MESH_TYPE_HELLO_ACK):
             logger().debug("Forwarding")
             if _ttl > 1:
                 _ttl -= 1

@@ -16,12 +16,43 @@ Usage:
     print(rb.get())
 """
 
+# TODO: Fix correctness issues in RingBuffer implementation:
+# - put_index() breaks FIFO guarantees and can overwrite data without updating head/tail/count
+# - clear_index() performs O(n) shifting and may introduce bugs in circular layout; consider removing or marking as slow
+#
+# TODO: Improve IRQ handling performance:
+# - Avoid try/finally when _irq_safe=False by introducing a fast path (no IRQ overhead)
+# - Ensure _enable_irq() is never called with undefined state
+#
+# TODO: Optimize hot paths for MicroPython:
+# - Inline _inc() in put()/get() to remove function call overhead
+# - Cache local variables (_buf, _head, _tail) inside tight loops to reduce attribute lookups
+# - Prefer bitmask wrapping when capacity is power-of-two (already partially implemented)
+#
+# TODO: Fix inefficient methods:
+# - to_tuple() is O(n²) due to repeated tuple concatenation → replace with tuple(self.to_list())
+# - to_bytes() currently consumes buffer and allocates inefficiently → rewrite to be non-destructive and single-pass
+# - ByteRingBuffer.put() iterates byte-by-byte → optimize for bytes input if possible
+#
+# TODO: API and design cleanup:
+# - Clearly document which operations are O(1) vs O(n)
+# - Consider removing or restricting non-ring-buffer operations (put_index, clear_index)
+# - Ensure consistent behavior between RingBuffer and ByteRingBuffer
+#
+# TODO: Optional advanced optimizations:
+# - Provide minimal "ISR-only" variant without extra features for maximum speed
+# - Benchmark performance (put/get throughput, IRQ vs non-IRQ)
+# - Consider specialized numeric buffer (e.g., array('f')) for DSP/sensor workloads
+
 import machine
+
+
 def _disable_irq() -> object:
     return machine.disable_irq()
+
+
 def _enable_irq(state: int) -> None:
     machine.enable_irq(state)
-
 
 
 class RingBuffer:
@@ -41,7 +72,7 @@ class RingBuffer:
         self._tail = 0  # index for next read
         self._count = 0
         self._overwrite = bool(overwrite)
-        self._mask : int | None = None
+        self._mask: int | None = None
         # mask optimization when capacity is power of two
         if (self._cap & (self._cap - 1)) == 0:
             self._mask = self._cap - 1
@@ -59,8 +90,8 @@ class RingBuffer:
 
     def put(self, item: object) -> None:
         """Push item. If full:
-           - if overwrite=True, oldest item is dropped and new item stored
-           - else raises IndexError
+        - if overwrite=True, oldest item is dropped and new item stored
+        - else raises IndexError
         """
         irq_state = _disable_irq()
         try:
@@ -115,7 +146,7 @@ class RingBuffer:
 
     def peek(self, index: int = 0) -> object:
         """Peek at item `index` (0 is oldest) without removing.
-            Raises IndexError if out of range.
+        Raises IndexError if out of range.
         """
         if index < 0 or index >= self._count:
             raise IndexError("peek index out of range")
@@ -135,7 +166,7 @@ class RingBuffer:
             raise IndexError("peek from empty buffer")
         return self.peek(self._count - 1)
 
-    def extend(self, iterable: list[object]|tuple[object]) -> None:
+    def extend(self, iterable: list[object] | tuple[object]) -> None:
         """Push multiple items until the buffer is full (or all items consumed)."""
         for it in iterable:
             try:
@@ -225,9 +256,7 @@ class RingBuffer:
             idx = self._inc(idx)
         return out
 
-
-
-    def __iter__(self): # type: ignore
+    def __iter__(self):  # type: ignore
         """Return iterator over elements in order."""
         idx = self._tail
         for _ in range(self._count):
@@ -308,7 +337,7 @@ class ByteRingBuffer:
         irq_state = _disable_irq()
         try:
             if n <= 0 or self._count == 0:
-                return b''
+                return b""
 
             n = min(n, self._count)
 
@@ -368,9 +397,9 @@ class ByteRingBuffer:
 
     def to_bytes(self) -> bytes:
         """Return contents in order as bytes (allocates)."""
-        return b''.join(self.get(self._count) for _ in (0,)) if self._count else b''
+        return b"".join(self.get(self._count) for _ in (0,)) if self._count else b""
 
-    def __iter__(self): # type: ignore
+    def __iter__(self):  # type: ignore
         """Return iterator over elements in order."""
         idx = self._tail
         for _ in range(self._count):
