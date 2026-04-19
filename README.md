@@ -1,61 +1,63 @@
 <div align="center">
-  <img src="./docs/assets/images/pc.png" alt="Description of image" width="45" height="45" style="display: inline-block; vertical-align: middle; margin-right: 10px;">
+  <img src="./docs/assets/images/pc.png" alt="PicoCore logo" width="45" height="45" style="vertical-align: middle; margin-right: 10px;">
   <h1 style="display: inline-block; vertical-align: middle;">PicoCore</h1>
 </div>
 
-PicoCore is a lightweight **MicroPython-based runtime and API** for the Raspberry Pi Pico, Pico W and Esp32. It provides a modular foundation to build embedded projects like weather stations, rovers, or automation devices with ease and efficiency.
+**PicoCore** is a lightweight MicroPython runtime and API designed for embedded systems. It provides a modular and efficient foundation for developing reliable applications on microcontrollers, including the Raspberry Pi Pico, Pico W, and ESP32.
 
-## 🚀 Features
+## Overview
 
-- Modular runtime built on MicroPython
-- Easy-to-use API for sensors,logging,decision making and networking
-- Configurable via `config.toml`
-- Optimized for **low-power use cases**
-- Compatible with Raspberry Pi Pico, Pico W (Pico 2 Series planned) & Esp32
+PicoCore simplifies embedded development by combining a structured runtime with a clean, extensible API. It is optimized for low-power environments and supports scalable projects, from simple sensors to complex automation systems.
 
-## 📖 Documentation
+## Features
 
-The full documentation is available at:
+* Modular MicroPython runtime
+* Unified API for sensors, logging, decision logic, and networking
+* Configuration via `config.toml`
+* Low-power optimization
+* Supports Raspberry Pi Pico, Pico W *(Pico 2 series planned)*, and ESP32
 
-👉 [PicoCore Documentation](https://pauwol.github.io/PicoCore/)
+## Documentation
 
-This includes:
+Comprehensive documentation is available online:
+[PicoCore Documentation](https://pauwol.github.io/PicoCore/)
 
-- **Getting Started guide** (flashing, setup, first program)
-- **Configuration reference** (`conf.toml`)
-- **API reference**
-- **Concepts & architecture**
+Includes:
 
-## 🛠️ Quickstart
+* **Getting Started:** Setup, flashing, first program
+* **Configuration Reference:** `config.toml` guide
+* **API Reference:** Detailed functions and modules
+* **Architecture:** Core concepts and system design
 
-Follow the [Getting Started guide](https://pauwol.github.io/PicoCore/setup) to flash your Pico and install the runtime.
+>  **Note:** The documentation is a work in progress. While every effort is made to keep it accurate, some sections may be incomplete or outdated. Maintaining code, tests, and online documentation simultaneously is a significant effort—thank you for your understanding and contributions!
 
-## 📦 Releases
+## Quick Start
 
-Precompiled releases (with `.uf2` firmware and PicoCore libraries) are available on the [Releases page](https://github.com/PauWol/PicoCore/releases).
+Follow the setup guide to install PicoCore and run your first application:
+[Quick Start Guide](https://pauwol.github.io/PicoCore/setup)
 
-## 🤝 Contributing
+## Releases
 
-Contributions are welcome! Feel free to open an issue or submit a pull request if you:
+Precompiled firmware (`.uf2`/`.bin`), compiled modules (`.mpy`), and source code are available for supported boards (Raspberry Pi Pico, Pico W, ESP32). 
+Each release may include different file structures, but similar organization is maintained when possible: [PicoCore Releases](https://github.com/PauWol/PicoCore/releases)
 
-- Found a bug 🐛
-- Have a feature request ✨
-- Want to improve documentation 📚
+## Contributing
 
-See [CONTRIBUTING](https://pauwol.github.io/PicoCore/contributing/) for guidelines.
+Contributions are welcome. You can help by:
 
-## 📜 License
+* Reporting bugs
+* Suggesting features
+* Improving documentation
 
-This project is licensed under the **MIT License**. See [LICENSE](LICENSE) for details.
+Contribution guidelines:
+[Contributing Guide](https://pauwol.github.io/PicoCore/contributing/)
 
-## 🙌 Acknowledgements
+## License
 
-- [MicroPython](https://micropython.org/) for the base runtime
-- [Raspberry Pi Foundation](https://www.raspberrypi.org/) for the Pico
-- Contributors & testers of PicoCore
+PicoCore is licensed under the MIT License. See the `LICENSE` file for details.
 
-### 🔗 Links
+## Useful Links
 
-- [Documentation](https://pauwol.github.io/PicoCore/)
-- [Releases](https://github.com/PauWol/PicoCore/releases)
-- [Issues](https://github.com/PauWol/PicoCore/issues)
+* Documentation: [https://pauwol.github.io/PicoCore/](https://pauwol.github.io/PicoCore/)
+* Releases: [https://github.com/PauWol/PicoCore/releases](https://github.com/PauWol/PicoCore/releases)
+* Issue Tracker: [https://github.com/PauWol/PicoCore/issues](https://github.com/PauWol/PicoCore/issues)
