@@ -22,7 +22,7 @@ from core.comms.constants import (
     BROADCAST_ADDR_MAC,
     MESH_FLAG_UNICAST,
     MESH_TYPE_DATA,
-    MAX_PMK_BYTE_LEN,
+    PMK_BYTE_LEN,
     PMK_DEFAULT_KEY,
     MESH_FLAG_GATEWAY,
     MESH_FLAG_PARTIAL,
@@ -412,7 +412,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
 
         :return:
         """
-        return 0 < len(pmk) <= MAX_PMK_BYTE_LEN
+        return len(pmk) == PMK_BYTE_LEN
 
     def _update_pmk(self, pmk: bytes | bytearray | str) -> None:
         """
@@ -423,6 +423,9 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
         _pmk_l = pmk
 
         if not self._is_pmk_valid(pmk):
+            logger().warn(
+                f"PMK: {pmk} is invlaid length needs to be {PMK_BYTE_LEN}.Using default pmk!"
+            )
             _pmk_l = PMK_DEFAULT_KEY
 
         self._esp.set_pmk(_pmk_l)
@@ -831,11 +834,11 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
                 # self._esp.config(rxbuf=4)
 
             _conf = get_config()
-            _secret = str(_conf.get(MESH_SECRET))
+            _secret = _conf.get(MESH_SECRET)
 
-            if _secret:
+            if _secret is not None:
                 time.sleep_ms(200)
-                self._update_pmk(_secret)
+                self._update_pmk(str(_secret))
 
             self._add(BROADCAST_ADDR_MAC)
 
