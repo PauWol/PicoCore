@@ -53,6 +53,7 @@ class Task:
         "boot",
         "onetime",
         "parallel",
+        "running",
     )
 
     def __repr__(self):
@@ -94,7 +95,7 @@ class Task:
         self.interval = 0
         self.last_run = 0
         self.next_run = 0
-        # TODO: Maybe add self.running param for parallel tasks to prevent multi spawned tasks.
+        self.running = False
         if boot and interval:
             logger().warn(
                 f"Interval {interval} for boot task {name} is ignored: {self.__repr__()} ;Consider Removing!"
@@ -155,12 +156,13 @@ class Task:
         :param now: Current tick time
         :return: True if task should run
         """
-        if not self.enabled:
+        _enabled = self.enabled
+        if not _enabled:
             return False
 
         # onetime tasks run once when next_run reached
         if self.onetime:
-            return ticks_diff(now, self.next_run) >= 0
+            return _enabled and not self.running and ticks_diff(now, self.next_run) >= 0
 
         if self.interval == 0:
             return False
@@ -176,6 +178,7 @@ class Task:
         :param now: Current tick time
         """
         if not self.enabled:
+            self.running = False
             return
 
         self.last_run = now
@@ -184,6 +187,8 @@ class Task:
 
         if self.boot or self.onetime:
             self.enabled = False
+
+        self.running = False
 
     async def run_async(self, now: int):
         """
@@ -194,6 +199,7 @@ class Task:
         :param now: Current tick time
         """
         if not self.enabled:
+            self.running = False
             return
 
         self.last_run = now
@@ -202,6 +208,8 @@ class Task:
 
         if self.boot or self.onetime:
             self.enabled = False
+
+        self.running = False
 
 
 class Root:
@@ -432,8 +440,10 @@ class Root:
                 optimize_()
 
             for _task in tasks:
-                if _task.should_run(now):
+                if _task.should_run(now) and not _task.running:
                     if _task.parallel:
+                        _task.running = True
+
                         if _task.async_task:
                             create_task_(_task.run_async(now))
                         else:
