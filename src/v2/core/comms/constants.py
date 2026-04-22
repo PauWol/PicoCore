@@ -11,8 +11,8 @@ import ustruct as struct
 # Header: version, type, src, dst, seq, ttl, flags, plen
 BASE_HEADER_FORMAT_NO_CRC = "<BBHHHBBB"  # 9 bytes
 BASE_HEADER_SIZE_NO_CRC = struct.calcsize(BASE_HEADER_FORMAT_NO_CRC)
-CRC8_SIZE = const(2)
-MESH_VERSION = const(2)
+CRC8_SIZE = const(1)
+MESH_VERSION = const(3)
 MAX_NEIGHBORS = const(32)
 ESPNOW_MAX_PAYLOAD_SIZE = const(250)
 # -------------------------------------------------------------------
@@ -30,23 +30,19 @@ MESH_TYPE_CTRL = const(5)  # Reserved for future control messages
 # Packet Flags (bitwise, can combine with |)
 # -------------------------------------------------------------------
 MESH_FLAG_NONE = const(0)  # No flags
+
 MESH_FLAG_ACK = const(1 << 0)  # Packet expects acknowledgment
 MESH_FLAG_BCAST = const(1 << 1)  # Broadcast to all neighbors
 MESH_FLAG_UNICAST = const(1 << 2)  # Unicast to a specific node
-MESH_FLAG_MULTICAST = const(1 << 3)  # Multicast to a node group
-MESH_FLAG_RELIABLE = const(1 << 4)  # Ensure delivery with retries
-MESH_FLAG_UNRELIABLE = const(1 << 5)  # Best-effort delivery
-MESH_FLAG_SECURE = const(1 << 6)  # Encrypted/authenticated
-MESH_FLAG_UNSECURE = const(1 << 7)  # Plain/unencrypted
-
 MESH_FLAG_GATEWAY = const(
-    1 << 8
+    1 << 3
 )  # Marks a NODE to be a gateway, I know it's not ideal.
 
 # Mesh flags for partial messages
-MESH_FLAG_PARTIAL_START = const(1 << 9)
-MESH_FLAG_PARTIAL_END = const(1 << 10)
-MESH_FLAG_PARTIAL = const(1 << 11)
+MESH_FLAG_PARTIAL_START = const(1 << 4)
+MESH_FLAG_PARTIAL_END = const(1 << 5)
+MESH_FLAG_PARTIAL = const(1 << 6)
+
 # -------------------------------------------------------------------
 # Default Mesh Parameters
 # -------------------------------------------------------------------
@@ -65,7 +61,8 @@ MESH_BACKGROUND_LISTENER_INTERVAL = const(1)
 MESH_BACKGROUND_PRIORITY = const(3)
 MESH_CLEAN_INTERVAL = const(10_000)
 MESH_HELLO_INTERVAL = const(30_000)
-
+ESPNOW_WIFI_CHANNEL = const(6)  # balanced 1 has best range but might be to crowded
+ESPNOW_WIFI_TXPOWER = const(20)
 # Mesh security
 
 PMK_BYTE_LEN = const(16)

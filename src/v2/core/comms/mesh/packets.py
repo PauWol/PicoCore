@@ -42,6 +42,7 @@ def payload_conv_iter(payload: str | bytes | bytearray):
         yield _p[i : i + MAX_PAYLOAD_SIZE]
 
 
+# TODO: Make the build packet function use low level for packet building -> remove struct.pack + use memview
 @micropython.native
 def build_packet(
     ptype: int,
@@ -110,7 +111,6 @@ def parse_packet(
     header_len = BASE_HEADER_SIZE_NO_CRC
     header_end = header_len + 1
     mv = memoryview(packet)
-
     # _header_crc8 = packet[: BASE_HEADER_SIZE_NO_CRC + 1] --OLD VERSION--
     # Header Sum Check
     if not verify_crc8(mv[:header_end]):
@@ -124,18 +124,23 @@ def parse_packet(
 
     _ver = mv[0]
     _ptype = mv[1]
-    _src = (mv[2] << 8) | mv[3]
-    _dst = (mv[4] << 8) | mv[5]
-    _seq = (mv[6] << 8) | mv[7]
+    _src = mv[2] | (mv[3] << 8)
+    _dst = mv[4] | (mv[5] << 8)
+    _seq = mv[6] | (mv[7] << 8)
     _ttl = mv[8]
     _flags = mv[9]
     _plen = mv[10]
 
-    _payload = mv[header_end:]
-
     # Checks function removed to save function call
     #     if not _checks(_version, _plen, len(_payload)):
     #         return None
+    if _ver != MESH_VERSION:
+        return None
+
+    _payload = mv[header_end:]
+
+    if _plen != len(_payload):
+        return None
 
     return _ver, _ptype, _src, _dst, _seq, _ttl, _flags, _plen, bytes(_payload)
 
@@ -149,6 +154,7 @@ def chunk_packet(
     ttl: int,
     flags: int,
     _payload: str | bytes | bytearray,
+    gateway: bool,
 ):
     """
     Split up a payload if it exceeds MAX_PAYLOAD_SIZE in multiple messages.
@@ -160,35 +166,52 @@ def chunk_packet(
     :param ttl:
     :param flags:
     :param _payload:
+    :param gateway:
     :yields: the build packets
     """
-    print("chunking...")
+    _payload = payload_conv(_payload)
     _plen = len(_payload)
 
-    if _plen <= MAX_PAYLOAD_SIZE:
-        print("One Packet")
-        yield build_packet(ptype, src, dst, seq, ttl, flags, payload_conv(_payload))
+    max_chunk = MAX_PAYLOAD_SIZE - 2  # -2 for chunk index
+
+    if _plen <= max_chunk:
+        yield build_packet(ptype, src, dst, seq, ttl, flags, _payload)
         return
 
-    _chunk_count = (_plen + MAX_PAYLOAD_SIZE - 1) // MAX_PAYLOAD_SIZE
-    print(f"chunk count: {_chunk_count}")
+    _chunk_count = (_plen + max_chunk - 1) // max_chunk
+    mv = memoryview(_payload)
 
-    for i, v in enumerate(payload_conv_iter(_payload)):
+    # precompute flags
+    f_mid = flags | MESH_FLAG_PARTIAL
+    f_start = f_mid | MESH_FLAG_PARTIAL_START
+    f_end = f_mid | MESH_FLAG_PARTIAL_END
+
+    # reusable buffer (max size)
+    _buf = bytearray(2 + max_chunk)
+
+    _start = 0
+
+    for i in range(_chunk_count):
+        _end = _start + max_chunk
+        _chunk = mv[_start:_end]
+        _clen = len(_chunk)
+
+        _buf[0] = i
+        _buf[1] = _chunk_count
+        _buf[2 : 2 + _clen] = _chunk
+
         if i == 0:
-            print("start packet")
-            yield build_packet(
-                ptype, src, dst, seq, ttl, flags | MESH_FLAG_PARTIAL_START, v
-            )
+            f = f_start
 
         elif i == _chunk_count - 1:
-            print("end packet")
-            yield build_packet(
-                ptype, src, dst, seq, ttl, flags | MESH_FLAG_PARTIAL_END, v
-            )
+            f = f_end
 
         else:
-            print("partial packet")
-            yield build_packet(ptype, src, dst, seq, ttl, flags | MESH_FLAG_PARTIAL, v)
+            f = f_mid
+
+        yield build_packet(ptype, src, dst, seq, ttl, f, _buf[: 2 + _clen], gateway)
+
+        _start = _end
 
 
 def encode_neighbour_tuple(_neighbors: dict) -> bytes:

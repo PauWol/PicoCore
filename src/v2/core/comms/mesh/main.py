@@ -15,7 +15,6 @@ from core.comms.constants import (
     MESH_TYPE_HELLO_ACK,
     BROADCAST_ADDR,
     DEFAULT_TTL,
-    MESH_FLAG_UNSECURE,
     MESH_FLAG_BCAST,
     MESH_FLAG_ACK,
     UNDEFINED_NODE_ID,
@@ -30,6 +29,8 @@ from core.comms.constants import (
     MESH_FLAG_PARTIAL_START,
     MESH_CLEAN_INTERVAL,
     MESH_HELLO_INTERVAL,
+    ESPNOW_WIFI_CHANNEL,
+    ESPNOW_WIFI_TXPOWER,
 )
 from core.constants import MESH_SECRET, MESH_GATEWAY
 from core.queue import RingBuffer
@@ -41,7 +42,6 @@ from .packets import (
     chunk_packet,
     encode_neighbour_tuple,
     decode_neighbour_bytes,
-    payload_conv_iter,
 )
 
 
@@ -593,21 +593,39 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
         if _ptype == MESH_TYPE_DATA:
             logger().debug("DATA packet received")
 
-            if _flags & MESH_FLAG_PARTIAL:
-                if _flags & MESH_FLAG_PARTIAL_START:
-                    self._fragments[key] = []
+            idx = _payload[0]
+            total = _payload[1]
+            data = _payload[2:]
 
-                if key not in self._fragments:
-                    return  # drop invalid sequence
+            if _flags & MESH_FLAG_PARTIAL_START:
+                self._fragments[key] = [None] * total
 
-                self._fragments[key].append(_payload)
+            if key not in self._fragments:
+                return
 
-                if _flags & MESH_FLAG_PARTIAL_END:
-                    full = b"".join(self._fragments[key])
-                    del self._fragments[key]
-                    _payload = full
-                else:
+            frags = self._fragments[key]
+            frags[idx] = data
+
+            if not (_flags & MESH_FLAG_PARTIAL_END):
+                return
+
+            # check completeness
+            for f in frags:
+                if f is None:
                     return
+
+            # build final payload efficiently
+            total_len = sum(len(f) for f in frags)
+            full = bytearray(total_len)
+
+            pos = 0
+            for f in frags:
+                l = len(f)
+                full[pos : pos + l] = f
+                pos += l
+
+            del self._fragments[key]
+            _payload = full
 
             try:
                 # (mac,node_id),(_payload)
@@ -641,7 +659,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
             BROADCAST_ADDR,
             self._sequence,
             self._ttl,
-            MESH_FLAG_BCAST | MESH_FLAG_ACK | MESH_FLAG_UNSECURE,
+            MESH_FLAG_BCAST | MESH_FLAG_ACK,
             b"",
             self._gateway,
         ), BROADCAST_ADDR_MAC
@@ -673,7 +691,6 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
         """
         _payload = encode_neighbour_tuple(self._neighbors)
         logger().debug(f"HELLO_ACK _payload: {_payload}")
-        _flags = MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE
 
         self._up_sequence()
 
@@ -683,7 +700,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
             self.node_id(mac),
             self._sequence,
             self._ttl,
-            _flags,
+            0,
             _payload,
         )
 
@@ -758,21 +775,18 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
         """
 
         _mac = self.target(dst_node_id, not_found_error)
-
-        for _p in payload_conv_iter(payload):
-            self._up_sequence()
-            _pb = build_packet(
-                MESH_TYPE_DATA,
-                self.node_id(),
-                dst_node_id,
-                self._sequence,
-                self._ttl,
-                MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE,
-                _p,
-                self._gateway,
-            )
-
-            self._send(_pb, _mac, True)
+        self._up_sequence()
+        for _p in chunk_packet(
+            MESH_TYPE_DATA,
+            self.node_id(),
+            dst_node_id,
+            self._sequence,
+            self._ttl,
+            MESH_FLAG_UNICAST,
+            payload,
+            self._gateway,
+        ):
+            self._send(_p, _mac, True)
 
     async def async_send_data(
         self,
@@ -789,20 +803,17 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
         """
         _mac = self.target(dst_node_id, not_found_error)
 
-        for _p in payload_conv_iter(payload):
-            self._up_sequence()
-            _pb = build_packet(
-                MESH_TYPE_DATA,
-                self.node_id(),
-                dst_node_id,
-                self._sequence,
-                self._ttl,
-                MESH_FLAG_UNICAST | MESH_FLAG_UNSECURE,
-                _p,
-                self._gateway,
-            )
-
-            await self._async_send(_pb, _mac, True)
+        for _p in chunk_packet(
+            MESH_TYPE_DATA,
+            self.node_id(),
+            dst_node_id,
+            self._sequence,
+            self._ttl,
+            MESH_FLAG_UNICAST,
+            payload,
+            self._gateway,
+        ):
+            await self._async_send(_p, _mac, True)
 
     # Mesh Runtime section -----------------------------------------------------------
 
@@ -827,6 +838,9 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
             if not self._wlan.active():
                 self._wlan.active(True)
                 self._wlan.disconnect()
+                self._wlan.config(
+                    channel=ESPNOW_WIFI_CHANNEL, txpower=ESPNOW_WIFI_TXPOWER
+                )
 
             if self._esp is None:
                 self._esp = AIOESPNow()

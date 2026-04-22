@@ -1,4 +1,4 @@
-from core import start, task, add_task
+from core import start, task
 
 from core.comms.mesh import mesh
 import asyncio
@@ -34,7 +34,27 @@ async def hell():
 def stat():
     print(mesh().stats())
     print(mesh()._neighbors)
-    add_task(print_task, 0, async_task=False, onetime=True)
+
+
+text = """[START]
+CHUNK_TEST_000:ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
+CHUNK_TEST_001:abcdefghijklmnopqrstuvwxyz0123456789
+CHUNK_TEST_002:ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
+CHUNK_TEST_003:abcdefghijklmnopqrstuvwxyz0123456789
+CHUNK_TEST_004:ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
+CHUNK_TEST_005:abcdefghijklmnopqrstuvwxyz0123456789
+CHUNK_TEST_006:ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789
+CHUNK_TEST_007:abcdefghijklmnopqrstuvwxyz0123456789
+[END]"""
+
+
+@task("5s")
+async def moin():
+    print("sent")
+    await mesh().async_send_data(
+        39108,
+        text,
+    )
 
 
 start()
