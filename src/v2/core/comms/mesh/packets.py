@@ -98,17 +98,7 @@ def build_packet(
     return header
 
 
-def _checks(version: int, plen: int, plen_check: int) -> bool:
-    """
-    Check if the packet is valid.
-    :param version:
-    :param plen:
-    :param plen_check:
-    :return:
-    """
-    return version == MESH_VERSION and plen == plen_check
-
-
+@micropython.native
 def parse_packet(
     packet: bytes,
 ) -> tuple[int, int, int, int, int, int, int, int, bytes] | None:
@@ -117,25 +107,37 @@ def parse_packet(
     :param packet: Packet as bytes [header+CRC8+payload]
     :return: Tuple of (version, ptype, src, dst, seq, ttl, flags, plen, payload) or None if invalid
     """
+    header_len = BASE_HEADER_SIZE_NO_CRC
+    header_end = header_len + 1
     mv = memoryview(packet)
 
     # _header_crc8 = packet[: BASE_HEADER_SIZE_NO_CRC + 1] --OLD VERSION--
     # Header Sum Check
-    if not verify_crc8(mv[: BASE_HEADER_SIZE_NO_CRC + 1]):
+    if not verify_crc8(mv[:header_end]):
         return None
 
-    _header = _header_crc8[:-1]
-    _payload = packet[BASE_HEADER_SIZE_NO_CRC + 1 :]
+    # manual unpacking to save resources
+    #   -- OLD VERSION --
+    # _version, _ptype, _src, _dst, _seq, _ttl, _flags, _plen = struct.unpack(
+    #         BASE_HEADER_FORMAT_NO_CRC, _header
+    #     )
 
-    _version, _ptype, _src, _dst, _seq, _ttl, _flags, _plen = struct.unpack(
-        BASE_HEADER_FORMAT_NO_CRC, _header
-    )
+    _ver = mv[0]
+    _ptype = mv[1]
+    _src = (mv[2] << 8) | mv[3]
+    _dst = (mv[4] << 8) | mv[5]
+    _seq = (mv[6] << 8) | mv[7]
+    _ttl = mv[8]
+    _flags = mv[9]
+    _plen = mv[10]
 
-    # Other checks
-    if not _checks(_version, _plen, len(_payload)):
-        return None
+    _payload = mv[header_end:]
 
-    return _version, _ptype, _src, _dst, _seq, _ttl, _flags, _plen, _payload
+    # Checks function removed to save function call
+    #     if not _checks(_version, _plen, len(_payload)):
+    #         return None
+
+    return _ver, _ptype, _src, _dst, _seq, _ttl, _flags, _plen, bytes(_payload)
 
 
 def chunk_packet(
