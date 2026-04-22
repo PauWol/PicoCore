@@ -4,9 +4,9 @@ Table-based default (256 bytes table) -> best perf.
 Optional table-less mode available for extremely low RAM.
 """
 
-
 _DEFAULT_POLY = 0x07
 _DEFAULT_INIT = 0x00
+
 
 def _make_table(poly: int = _DEFAULT_POLY) -> bytearray:
     """
@@ -25,13 +25,16 @@ def _make_table(poly: int = _DEFAULT_POLY) -> bytearray:
         t[i] = crc
     return t
 
+
 # Precompute table (occupies ~256 bytes RAM) - recommended.
 _TABLE = _make_table(_DEFAULT_POLY)
 
-def crc8(data: bytes|bytearray|memoryview,
-         init: int = _DEFAULT_INIT,
-         table: bytearray = _TABLE
-         ):
+
+def crc8(
+    data: bytes | bytearray | memoryview,
+    init: int = _DEFAULT_INIT,
+    table: bytearray = _TABLE,
+):
     """
     Compute CRC8 over bytes-like `data`.
     `data` can be bytes, bytearray, memoryview, or list/tuple of ints.
@@ -39,7 +42,7 @@ def crc8(data: bytes|bytearray|memoryview,
     """
     crc = init & 0xFF
     # memoryview avoids extra allocations and is fast in MicroPython
-    if isinstance(data,memoryview):
+    if isinstance(data, memoryview):
         mv = data
     else:
         mv = memoryview(data)
@@ -51,7 +54,7 @@ def crc8(data: bytes|bytearray|memoryview,
     return crc
 
 
-def crc8_update(crc: int, data: bytes|bytearray, table: bytearray = _TABLE) -> int:
+def crc8_update(crc: int, data: bytes | bytearray, table: bytearray = _TABLE) -> int:
     """
     Continue CRC8 with existing `crc` value.
     Returns updated crc.
@@ -65,10 +68,9 @@ def crc8_update(crc: int, data: bytes|bytearray, table: bytearray = _TABLE) -> i
 
 
 # --- Table-less (bitwise) fallback for extremely low RAM ---
-def crc8_nontable(data: bytes|bytearray,
-                  poly: int = _DEFAULT_POLY,
-                  init: int = _DEFAULT_INIT
-                  ) -> int:
+def crc8_nontable(
+    data: bytes | bytearray, poly: int = _DEFAULT_POLY, init: int = _DEFAULT_INIT
+) -> int:
     """
     CRC-8 without table. Much less RAM, slower CPU.
     Use when you cannot afford the 256-byte table.
@@ -92,13 +94,15 @@ class CRC8:
     CRC8(use_table=True) -> fast (uses shared table)
     CRC8(use_table=False) -> uses bitwise (no table memory)
     """
+
     __slots__ = ("_crc", "_init", "_use_table", "_table", "_poly")
 
-    def __init__(self,
-                 poly: int = _DEFAULT_POLY,
-                 init: int = _DEFAULT_INIT,
-                 use_table: bool = True
-                 ):
+    def __init__(
+        self,
+        poly: int = _DEFAULT_POLY,
+        init: int = _DEFAULT_INIT,
+        use_table: bool = True,
+    ):
         """
         Initialize CRC8 object.
         :param poly:
@@ -109,8 +113,11 @@ class CRC8:
         self._crc = self._init
         self._use_table = bool(use_table)
         self._poly = poly & 0xFF
-        self._table = _TABLE if (use_table and poly == _DEFAULT_POLY) \
+        self._table = (
+            _TABLE
+            if (use_table and poly == _DEFAULT_POLY)
             else (_make_table(poly) if use_table else None)
+        )
 
     @property
     def crc8(self) -> int:
@@ -121,7 +128,7 @@ class CRC8:
         return self._crc
 
     @crc8.setter
-    def crc8(self,value: int) -> None:
+    def crc8(self, value: int) -> None:
         """
         Set the CRC8 value.
         :param value: int
@@ -129,7 +136,7 @@ class CRC8:
         """
         self._crc = value
 
-    def update(self, data:bytes|bytearray) -> None:
+    def update(self, data: bytes | bytearray) -> None:
         """
         Update CRC8 with new data.
         :param data:
@@ -176,7 +183,7 @@ class CRC8:
         return c
 
 
-def append_crc8_to_bytes(buf:bytes|bytearray) -> bytes:
+def append_crc8_to_bytes(buf: bytes | bytearray) -> bytes:
     """
     Returns a new bytes object = buf + crc8(buf).
     (Convenient for short headers.)
@@ -187,7 +194,7 @@ def append_crc8_to_bytes(buf:bytes|bytearray) -> bytes:
     return bytes(buf) + bytes([c])
 
 
-def append_crc8_to_bytearray(buf:bytearray) -> int:
+def append_crc8_to_bytearray(buf: bytearray) -> int:
     """
     Appends crc to a bytearray in-place (efficient).
     :param buf:
@@ -198,7 +205,7 @@ def append_crc8_to_bytearray(buf:bytearray) -> int:
     return c
 
 
-def verify_crc8(data_with_crc:bytes|bytearray) -> bool:
+def verify_crc8(data_with_crc: bytes | bytearray | memoryview) -> bool:
     """
     Verify last byte is CRC8 of preceding bytes.
     :param data_with_crc:

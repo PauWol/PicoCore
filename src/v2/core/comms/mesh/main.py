@@ -528,7 +528,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
         # TODO: Update this function for efficiency repeated node id calls etc -> pre-allocate etc.
         parsed = parse_packet(msg)
         if not parsed:
-            return
+            return  # Return on dropped packages when runtime assertions don't apply -> ex. protocol version
         _version, _ptype, _src, _dst, _seq, _ttl, _flags, _plen, _payload = parsed
 
         my_id = self.node_id()
