@@ -593,39 +593,40 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
         if _ptype == MESH_TYPE_DATA:
             logger().debug("DATA packet received")
 
-            idx = _payload[0]
-            total = _payload[1]
-            data = _payload[2:]
+            if _flags & MESH_FLAG_PARTIAL:
+                idx = _payload[0]
+                total = _payload[1]
+                data = _payload[2:]
 
-            if _flags & MESH_FLAG_PARTIAL_START:
-                self._fragments[key] = [None] * total
+                if _flags & MESH_FLAG_PARTIAL_START:
+                    self._fragments[key] = [None] * total
 
-            if key not in self._fragments:
-                return
-
-            frags = self._fragments[key]
-            frags[idx] = data
-
-            if not (_flags & MESH_FLAG_PARTIAL_END):
-                return
-
-            # check completeness
-            for f in frags:
-                if f is None:
+                if key not in self._fragments:
                     return
 
-            # build final payload efficiently
-            total_len = sum(len(f) for f in frags)
-            full = bytearray(total_len)
+                frags = self._fragments[key]
+                frags[idx] = data
 
-            pos = 0
-            for f in frags:
-                l = len(f)
-                full[pos : pos + l] = f
-                pos += l
+                if not (_flags & MESH_FLAG_PARTIAL_END):
+                    return
 
-            del self._fragments[key]
-            _payload = full
+                # check completeness
+                for f in frags:
+                    if f is None:
+                        return
+
+                # build final payload efficiently
+                total_len = sum(len(f) for f in frags)
+                full = bytearray(total_len)
+
+                pos = 0
+                for f in frags:
+                    l = len(f)
+                    full[pos : pos + l] = f
+                    pos += l
+
+                del self._fragments[key]
+                _payload = full
 
             try:
                 # (mac,node_id),(_payload)
@@ -803,7 +804,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
         :return:
         """
         _mac = self.target(dst_node_id, not_found_error)
-
+        self._up_sequence()
         for _p in chunk_packet(
             MESH_TYPE_DATA,
             self.node_id(),
