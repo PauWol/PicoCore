@@ -682,7 +682,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
 
     def _hello_ack(
         self, mac: bytes | bytearray
-    ) -> tuple[int, int, int, int, int, int, bytes]:
+    ) -> tuple[int, int, int, int, int, int, bytes, bool]:
         """
         Build the hello_ack packet.
 
@@ -702,6 +702,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
             self._ttl,
             0,
             _payload,
+            self._gateway,
         )
 
     def hello_ack(self, mac: bytes | bytearray) -> None:
@@ -883,9 +884,14 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
 
     def rx_enable(self, listen_ms: int | None = None):
         """
-        Enable receiving packets.
-        :param listen_ms:
-        :return:
+        Enable packet reception.
+
+        Automatically starts the mesh (calls 'mesh().start()') if it has not
+        been started yet.
+
+        :param listen_ms: Optional duration in milliseconds to keep reception
+                          enabled. If None, reception remains enabled indefinitely.
+        :return: None
         """
         if not self._started:
             self.start()
@@ -957,11 +963,31 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
 
     async def run(self):
         """
-        Unified mesh runtime loop:
+        Unified mesh loop:
         - receive packets
-        - send heartbeat (HELLO)
+        - send HELLO (heartbeat)
         - cleanup neighbors
+
+        Timing:
+        - HELLO: every MESH_HELLO_INTERVAL ms (with node_id jitter)
+        - CLEAN: every MESH_CLEAN_INTERVAL ms
+
+        RX:
+        - host: tuple -> (MAC, node_id)
+        - msg: bytes|bytearray
+        - handled via self._irq(host, msg)
+
+        Notes:
+        - non-blocking RX (airecv)
+        - uses ticks_ms (wrap-safe)
+        - errors logged, loop continues
+        - auto-start if not started
+
+        :return: None
         """
+
+        if not self._started:
+            self.start()
 
         # pre-allocate to save lookup time
         _ticks_diff = time.ticks_diff
