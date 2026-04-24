@@ -5,9 +5,11 @@ This module provides utility functions for the PicoCore V2 Comms Mesh module.
 """
 
 import micropython
+import os
 
 import ustruct as struct
 import ujson
+
 from core.comms.constants import (
     BASE_HEADER_FORMAT_NO_CRC,
     BASE_HEADER_SIZE_NO_CRC,
@@ -17,6 +19,7 @@ from core.comms.constants import (
     MESH_FLAG_PARTIAL_END,
     MESH_FLAG_PARTIAL,
     MESH_FLAG_GATEWAY,
+    MESH_FLAG_FILE,
 )
 from core.comms.crc8 import append_crc8_to_bytearray, verify_crc8
 
@@ -212,6 +215,84 @@ def chunk_packet(
         yield build_packet(ptype, src, dst, seq, ttl, f, _buf[: 2 + _clen], gateway)
 
         _start = _end
+
+
+def chunk_file(
+    ptype: int,
+    src: int,
+    dst: int,
+    seq: int,
+    ttl: int,
+    flags: int,
+    file_path: str,
+    new_name: str | None,
+    gateway: bool,
+):
+    _size = os.stat(file_path)[6]  #
+    file_name = file_path
+    if new_name is not None:
+        file_name = new_name
+
+    file_name = file_name.encode("utf-8")
+    l_name = len(file_name)
+
+    max_chunk = MAX_PAYLOAD_SIZE - 2  # -2 for chunk index
+    _chunk_count = (_size + max_chunk - 1) // max_chunk
+
+    if 7 + l_name > MAX_PAYLOAD_SIZE:
+        l_name = max_chunk - 7
+        file_name = file_name[-l_name:]  # keep end
+
+    buf = bytearray(7 + l_name)
+
+    # pack size in first 4 bytes
+    buf[0] = (_size >> 24) & 0xFF
+    buf[1] = (_size >> 16) & 0xFF
+    buf[2] = (_size >> 8) & 0xFF
+    buf[3] = _size & 0xFF
+
+    # pack size in 2 bytes -> meaning file size that can be send is limited
+    if _chunk_count > 0xFFFF:
+        raise ValueError("File too large")
+
+    buf[4] = (_chunk_count >> 8) & 0xFF
+    buf[5] = _chunk_count & 0xFF
+
+    # pack length and name
+    buf[6] = l_name
+    buf[7 : 7 + l_name] = file_name
+
+    # precompute flags
+    f_mid = flags | MESH_FLAG_PARTIAL | MESH_FLAG_FILE
+    f_start = f_mid | MESH_FLAG_PARTIAL_START
+    f_end = f_mid | MESH_FLAG_PARTIAL_END
+
+    yield build_packet(ptype, src, dst, seq, ttl, f_start, buf, gateway), 0
+    del buf
+
+    # reusable buffer
+    buf = bytearray(2 + max_chunk)
+
+    with open(file_path, "rb") as f:
+        for i in range(_chunk_count):
+            chunk = f.read(max_chunk)
+            clen = len(chunk)
+
+            if clen == 0:
+                break  # safety
+
+            buf[0] = (i >> 8) & 0xFF
+            buf[1] = i & 0xFF
+            buf[2 : 2 + clen] = chunk
+
+            flags = f_end if i == _chunk_count - 1 else f_mid
+
+            yield (
+                build_packet(
+                    ptype, src, dst, seq, ttl, flags, buf[: 2 + clen], gateway
+                ),
+                i,
+            )
 
 
 def encode_neighbour_tuple(_neighbors: dict) -> bytes:

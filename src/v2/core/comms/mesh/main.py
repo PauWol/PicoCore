@@ -4,6 +4,7 @@ PicoCore V2 Comms Mesh Main
 This module provides the PicoCore V2 Comms Mesh main class.
 """
 
+import os
 import time
 import gc
 from network import WLAN, STA_IF
@@ -31,15 +32,19 @@ from core.comms.constants import (
     MESH_HELLO_INTERVAL,
     ESPNOW_WIFI_CHANNEL,
     ESPNOW_WIFI_TXPOWER,
+    MESH_FLAG_FILE,
+    FILE_RX_WINDOW_SIZE,
 )
 from core.constants import MESH_SECRET, MESH_GATEWAY
 from core.queue import RingBuffer
 from core.logging import logger
 from core.config import get_config
+from core.util import _file_exists
 from .packets import (
     build_packet,
     parse_packet,
     chunk_packet,
+    chunk_file,
     encode_neighbour_tuple,
     decode_neighbour_bytes,
 )
@@ -47,6 +52,15 @@ from .packets import (
 
 class NodeNotFoundError(Exception):
     pass
+
+
+FH = 0
+BUF = 1
+BASE = 2
+TOTAL = 3
+LAST = 4
+NAME = 5
+SIZE = 6
 
 
 class Mesh:  # pylint: disable=too-many-instance-attributes
@@ -77,6 +91,16 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
         self._rx_expected_until = 0  # ticks_ms timestamp
         self._raw_recv_callback_data = False
         self._fragments = {}  # (src, seq) -> [chunks]
+
+        # self._file_rx[key] = [
+        #     fh,
+        #     [None] * WINDOW_SIZE,
+        #     0,
+        #     total,
+        #     time.ticks_ms(),
+        #     name
+        # ]
+        self._file_rx = {}
         self._neighbor_timeout = 30000  # 30s
 
         self._seen_packets = set()
@@ -147,6 +171,15 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
             raise ValueError("Invalid timeout format")
 
         return int(timeout * 1000)
+
+    # TODO add proper clean logic also fo partial messages and optimize.
+    def _clean_fragment_buffers(self, now):
+
+        for k, s in list(self._file_rx.items()):
+            if time.ticks_diff(now, s[LAST]) > 20000:
+                s[FH].close()
+                os.rename(s[NAME] + ".tmp", s[NAME] + ".corrupt")
+                del self._file_rx[k]
 
     # Sequencing section ---------------------------------------------------------------
 
@@ -540,8 +573,10 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
             return
 
         key = (_src, _seq)
+
         # DROP duplicates if not partial
-        if not (_flags & MESH_FLAG_PARTIAL) and self._seen(*key):
+        is_stream = _flags & (MESH_FLAG_FILE | MESH_FLAG_PARTIAL)
+        if not is_stream and self._seen(*key):
             return
 
         if _flags & MESH_FLAG_GATEWAY:
@@ -593,7 +628,87 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
         if _ptype == MESH_TYPE_DATA:
             logger().debug("DATA packet received")
 
-            if _flags & MESH_FLAG_PARTIAL:
+            if _flags & MESH_FLAG_FILE:
+                logger().debug("FILE packet received")
+
+                if _flags & MESH_FLAG_PARTIAL_START:
+                    logger().debug("FILE start")
+                    size = (
+                        (_payload[0] << 24)
+                        | (_payload[1] << 16)
+                        | (_payload[2] << 8)
+                        | _payload[3]
+                    )
+
+                    total = (_payload[4] << 8) | _payload[5]
+                    name_len = _payload[6]
+                    name = _payload[7 : 7 + name_len].decode()
+
+                    fh = open(name + ".tmp", "wb")  # noqa: SIM115
+
+                    self._file_rx[key] = [
+                        fh,
+                        [None] * FILE_RX_WINDOW_SIZE,
+                        0,
+                        total,
+                        time.ticks_ms(),
+                        name,
+                        size,
+                    ]
+                    return
+
+                if _flags & MESH_FLAG_PARTIAL:
+                    if key not in self._file_rx:
+                        return
+
+                    state = self._file_rx[key]
+
+                    idx = (_payload[0] << 8) | _payload[1]
+                    logger().debug(f"File partial: {idx}")
+                    data = _payload[2:]
+
+                    base = state[BASE]
+                    buf = state[BUF]
+                    win = len(buf)
+
+                    offset = idx - base
+
+                    # ignore old or out-of-window
+                    if offset < 0 or offset >= win:
+                        return
+
+                    if buf[offset] is None:
+                        buf[offset] = data
+
+                    fh = state[FH]
+
+                    while buf[0] is not None:
+                        fh.write(buf[0])
+
+                        # shift window
+                        buf.pop(0)
+                        buf.append(None)
+
+                        state[BASE] += 1
+
+                    if _flags & MESH_FLAG_PARTIAL_END:
+                        logger().debug("File end")
+                        if state[BASE] == state[TOTAL]:
+                            # success
+                            fh.close()
+                            n = state[NAME]
+                            os.rename(n + ".tmp", n)
+                        else:
+                            # incomplete
+                            fh.close()
+                            n = state[NAME]
+                            os.rename(n + ".tmp", n + ".corrupt")
+
+                        del self._file_rx[key]
+
+                    return
+
+            elif _flags & MESH_FLAG_PARTIAL:
                 idx = _payload[0]
                 total = _payload[1]
                 data = _payload[2:]
@@ -817,6 +932,98 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
         ):
             await self._async_send(_p, _mac, True)
 
+    async def async_send_file(
+        self,
+        dst_node_id: int,
+        file_name: str,
+        new_name=None,
+        not_found_error: bool = False,
+    ) -> None:
+        """
+        Send a file asynchronously over the mesh in chunked packets.
+
+
+        :param dst_node_id: Target node ID.
+        :param file_name: Local file path to send.
+        :param new_name: Optional remote filename override.
+        :param not_found_error: If True, raise if node is unknown; otherwise broadcast fallback.
+
+        :returns:
+
+        Notes:
+            - File is split into protocol chunks via `chunk_file`.
+            - Each chunk is sent over ESP-NOW asynchronously.
+            - Requires mesh to be started.
+        """
+        if not _file_exists(file_name):
+            logger().error(
+                f"file: {file_name} does not exist, couldn't be send to: {dst_node_id}"
+            )
+            return
+
+        _mac = self.target(dst_node_id, not_found_error)
+        self._up_sequence()
+
+        for _p, i in chunk_file(
+            MESH_TYPE_DATA,
+            self.node_id(),
+            dst_node_id,
+            self._sequence,
+            self._ttl,
+            MESH_FLAG_UNICAST,
+            file_name,
+            new_name,
+            self._gateway,
+        ):
+            await self._async_send(_p, _mac, False)
+            logger().debug(f"Sending chunk: {i}")
+            await asyncio.sleep_ms(35 + (i % 5))
+
+    def send_file(
+        self,
+        dst_node_id: int,
+        file_name: str,
+        new_name=None,
+        not_found_error: bool = False,
+    ) -> None:
+        """
+        Send a file synchronously over the mesh in chunked packets.
+
+
+        :param dst_node_id: Target node ID.
+        :param file_name: Local file path to send.
+        :param new_name: Optional remote filename override.
+        :param not_found_error: If True, raise if node is unknown; otherwise broadcast fallback.
+
+        :returns:
+
+        Notes:
+            - File is split into protocol chunks via `chunk_file`.
+            - Each chunk is sent over ESP-NOW asynchronously.
+            - Requires mesh to be started.
+        """
+        if not _file_exists(file_name):
+            logger().error(
+                f"file: {file_name} does not exist, couldn't be send to: {dst_node_id}"
+            )
+            return
+
+        _mac = self.target(dst_node_id, not_found_error)
+        self._up_sequence()
+
+        for _p in chunk_file(
+            MESH_TYPE_DATA,
+            self.node_id(),
+            dst_node_id,
+            self._sequence,
+            self._ttl,
+            MESH_FLAG_UNICAST,
+            file_name,
+            new_name,
+            self._gateway,
+        ):
+            self._send(_p, _mac, False)
+
     # Mesh Runtime section -----------------------------------------------------------
 
     def start(self) -> None:
@@ -997,6 +1204,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
         _airecv = self._esp.airecv
         _async_hello = self.async_hello
         _clean_neighbors = self._cleanup_neighbors
+        _clean_fragments = self._clean_fragment_buffers
 
         now = _ticks_ms()
 
@@ -1027,6 +1235,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
             # Clean
             if _ticks_diff(now, last_clean) > MESH_CLEAN_INTERVAL:
                 _clean_neighbors()
+                _clean_fragments(now)
                 last_clean = now
 
             # yield

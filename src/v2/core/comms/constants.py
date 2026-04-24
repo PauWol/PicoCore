@@ -19,9 +19,9 @@ ESPNOW_MAX_PAYLOAD_SIZE = const(250)
 # Packet Types
 # -------------------------------------------------------------------
 MESH_TYPE_HELLO = const(1)  # Node announces itself / joins network
-MESH_TYPE_HELLO_ACK = const(
-    2
-)  # Node acknowledges announcement / transmits routing table
+
+# Node acknowledges announcement / transmits routing table
+MESH_TYPE_HELLO_ACK = const(2)
 MESH_TYPE_DATA = const(3)  # Regular data or control payload
 MESH_TYPE_ACK = const(4)  # Acknowledgment for reliable delivery
 MESH_TYPE_CTRL = const(5)  # Reserved for future control messages
@@ -34,14 +34,17 @@ MESH_FLAG_NONE = const(0)  # No flags
 MESH_FLAG_ACK = const(1 << 0)  # Packet expects acknowledgment
 MESH_FLAG_BCAST = const(1 << 1)  # Broadcast to all neighbors
 MESH_FLAG_UNICAST = const(1 << 2)  # Unicast to a specific node
-MESH_FLAG_GATEWAY = const(
-    1 << 3
-)  # Marks a NODE to be a gateway, I know it's not ideal.
+
+# Marks a NODE to be a gateway, I know it's not ideal.
+MESH_FLAG_GATEWAY = const(1 << 3)
 
 # Mesh flags for partial messages
 MESH_FLAG_PARTIAL_START = const(1 << 4)
 MESH_FLAG_PARTIAL_END = const(1 << 5)
 MESH_FLAG_PARTIAL = const(1 << 6)
+
+# Marks a partial transmission to be treated as file data
+MESH_FLAG_FILE = const(1 << 7)
 
 # -------------------------------------------------------------------
 # Default Mesh Parameters
@@ -51,7 +54,7 @@ DEFAULT_TTL = const(10)  # Default Time To Live (hops)
 MAX_PAYLOAD_SIZE = ESPNOW_MAX_PAYLOAD_SIZE - (BASE_HEADER_SIZE_NO_CRC + CRC8_SIZE)
 BROADCAST_ADDR = const(0xFFFF)
 UNDEFINED_NODE_ID = const(0x0000)  # For uninitialized nodes
-
+FILE_RX_WINDOW_SIZE = const(10)
 BROADCAST_ADDR_MAC: bytes = b"\xff\xff\xff\xff\xff\xff"
 
 # -------------------------------------------------------------------
