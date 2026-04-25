@@ -34,6 +34,7 @@ from core.comms.constants import (
     ESPNOW_WIFI_TXPOWER,
     MESH_FLAG_FILE,
     FILE_RX_WINDOW_SIZE,
+    MESH_TYPE_ACK,
 )
 from core.constants import MESH_SECRET, MESH_GATEWAY
 from core.queue import RingBuffer
@@ -101,6 +102,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
         #     name
         # ]
         self._file_rx = {}
+        self._ack_set = set()
         self._neighbor_timeout = 30000  # 30s
 
         self._seen_packets = set()
@@ -465,7 +467,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
 
     # Routing section ----------------------------------------------------------------------
     #
-    # For no routing is:
+    # For now routing is:
     # Before development of this logic an already better algorithm is planned.
     #
     # Algorithm Idea:
@@ -558,7 +560,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
         :param msg:
         :return:
         """
-        # TODO: Update this function for efficiency repeated node id calls etc -> pre-allocate etc.
+        # TODO: Update this function for efficiency as still in active feature dev -> later remove logger calls
         parsed = parse_packet(msg)
         if not parsed:
             return  # Return on dropped packages when runtime assertions don't apply -> ex. protocol version
@@ -606,6 +608,11 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
                 )
             return
 
+        if _ptype == MESH_TYPE_ACK and _dst == my_id:
+            _old_seq = _payload[0] | (_payload[1] << 8)
+            self._ack_set.add((_old_seq, _src))
+            return
+
         # FORWARD if not for us and not Broadcast
         if (
             _dst != my_id
@@ -621,7 +628,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
                 )
 
                 # broadcast forward (simple flooding)
-                self._esp.send(self.target(_dst), fwd_packet, False)
+                await self._async_send(fwd_packet, self.target(_dst), False)
 
             return
 
@@ -655,6 +662,8 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
                         name,
                         size,
                     ]
+
+                    await self.async_send_ack(_src, _seq)
                     return
 
                 if _flags & MESH_FLAG_PARTIAL:
@@ -706,6 +715,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
 
                         del self._file_rx[key]
 
+                    await self.async_send_ack(_src, _seq)
                     return
 
             elif _flags & MESH_FLAG_PARTIAL:
@@ -845,6 +855,30 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
             logger().debug("Sending chunk...")
             await self._async_send(_p, mac, False)
 
+    def wait_for_ack(self, node_id: int, seq: int, timeout: float = 5.0) -> bool:
+
+        start = time.ticks_ms()
+        key = (seq, node_id)
+        while key not in self._ack_set:
+            if time.ticks_diff(time.ticks_ms(), start) > timeout * 1000:
+                return False
+            time.sleep(0.05)  # small delay to yield CPU
+
+        self._ack_set.remove(key)
+        return True
+
+    async def async_wait_for_ack(
+        self, node_id: int, seq: int, timeout: float = 5.0
+    ) -> bool:
+        start = time.ticks_ms()
+        key = (seq, node_id)
+        while key not in self._ack_set:
+            if time.ticks_diff(time.ticks_ms(), start) > timeout * 1000:
+                return False
+            await asyncio.sleep(0.05)  # small delay to yield CPU
+        self._ack_set.remove(key)
+        return True
+
     def wait_for_hello_ack(self, node_id: int, timeout: float = 5.0) -> bool:
         """
         Wait until HELLO_ACK is received from a node, i.e., the neighbor is registered.
@@ -977,7 +1011,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
         ):
             await self._async_send(_p, _mac, False)
             logger().debug(f"Sending chunk: {i}")
-            await asyncio.sleep_ms(35 + (i % 5))
+            await self.async_wait_for_ack(dst_node_id, self._sequence)
 
     def send_file(
         self,
@@ -1023,6 +1057,31 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
             self._gateway,
         ):
             self._send(_p, _mac, False)
+            self.wait_for_ack(dst_node_id, self._sequence)
+
+    async def async_send_ack(
+        self, dst_node_id: int, seq: int, not_found_error: bool = False
+    ):
+
+        _mac = self.target(dst_node_id, not_found_error)
+        self._up_sequence()
+
+        _payload = bytearray(2)
+        _payload[0] = seq & 0xFF  # low byte
+        _payload[1] = (seq >> 8) & 0xFF  # high byte
+
+        _p = build_packet(
+            MESH_TYPE_ACK,
+            self.node_id(),
+            dst_node_id,
+            self._sequence,
+            self._ttl,
+            0,
+            _payload,
+            self._gateway,
+        )
+
+        await self._async_send(_p, _mac, False)
 
     # Mesh Runtime section -----------------------------------------------------------
 
