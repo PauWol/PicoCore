@@ -17,7 +17,7 @@ PM_LIGHT_SLEEP = const("LIGHT_SLEEP")
 PM_DEEP_SLEEP = const("DEEP_SLEEP")
 PM_OFF = const("OFF")
 
-PM_LIST = [PM_ECO,PM_ACTIVE,PM_OFF,PM_IDLE,PM_LIGHT_SLEEP,PM_DEEP_SLEEP]
+PM_LIST = [PM_ECO, PM_ACTIVE, PM_OFF, PM_IDLE, PM_LIGHT_SLEEP, PM_DEEP_SLEEP]
 
 
 NORMALIZED_VOLTAGE_DIFFERENCE_V_MAX_TO_V_NOMINAL = 0.1
@@ -53,8 +53,6 @@ SLEEP_INTERVAL = const("system.runtime.interval")
 # root rules
 
 
-
-
 # --------------------- Event Bus ---------------------
 
 BUS_SYSTEM_ROOT_PATH = const("system/root")
@@ -67,11 +65,12 @@ EVENT_ROOT_LOOP_BOOT_BEFORE = const("root/loop/boot/before")
 EVENT_ROOT_LOOP_BOOT_AFTER = const("root/loop/boot/after")
 EVENT_ROOT_LOOP_BOOT = const("root/loop/boot")
 
+EVENT_MESH_FILE_RECEIVED = const("mesh/rx/file")
 
 # --------------------- Boot ---------------------
 
-BOOT_FLAG = "boot_flag"      # filename stored in flash
-BOOT_WINDOW_MS = 1500        # time window to consider a second boot as "double boot"
+BOOT_FLAG = "boot_flag"  # filename stored in flash
+BOOT_WINDOW_MS = 1500  # time window to consider a second boot as "double boot"
 
 
 # --------------------- Logging ---------------------
@@ -87,22 +86,32 @@ TRACE = const(6)
 
 # Map names (optional)
 LEVEL_NAMES = {
-    FATAL: "FATAL", ERROR: "ERROR", WARN: "WARN",
-    INFO: "INFO", DEBUG: "DEBUG", OFF: "OFF", TRACE: "TRACE"
+    FATAL: "FATAL",
+    ERROR: "ERROR",
+    WARN: "WARN",
+    INFO: "INFO",
+    DEBUG: "DEBUG",
+    OFF: "OFF",
+    TRACE: "TRACE",
 }
 LEVEL_NAMES_REV = {
-    "FATAL" : FATAL, "ERROR":ERROR, "WARN":WARN,
-    "INFO":INFO, "DEBUG":DEBUG,"OFF":OFF,  "TRACE":TRACE
+    "FATAL": FATAL,
+    "ERROR": ERROR,
+    "WARN": WARN,
+    "INFO": INFO,
+    "DEBUG": DEBUG,
+    "OFF": OFF,
+    "TRACE": TRACE,
 }
 
 LEVEL_BYTES = {
-    OFF:   ustruct.pack('B', OFF),
-    FATAL: ustruct.pack('B', FATAL),
-    ERROR: ustruct.pack('B', ERROR),
-    WARN:  ustruct.pack('B', WARN),
-    INFO:  ustruct.pack('B', INFO),
-    DEBUG: ustruct.pack('B', DEBUG),
-    TRACE: ustruct.pack('B', TRACE)
+    OFF: ustruct.pack("B", OFF),
+    FATAL: ustruct.pack("B", FATAL),
+    ERROR: ustruct.pack("B", ERROR),
+    WARN: ustruct.pack("B", WARN),
+    INFO: ustruct.pack("B", INFO),
+    DEBUG: ustruct.pack("B", DEBUG),
+    TRACE: ustruct.pack("B", TRACE),
 }
 
 # File paths

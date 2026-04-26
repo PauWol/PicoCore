@@ -36,8 +36,9 @@ from core.comms.constants import (
     FILE_RX_WINDOW_SIZE,
     MESH_TYPE_ACK,
 )
-from core.constants import MESH_SECRET, MESH_GATEWAY
+from core.constants import MESH_SECRET, MESH_GATEWAY, EVENT_MESH_FILE_RECEIVED
 from core.queue import RingBuffer
+from core.root.bus import async_emit
 from core.logging import logger
 from core.config import get_config
 from core.util import _file_exists
@@ -714,6 +715,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
                             os.rename(n + ".tmp", n + ".corrupt")
 
                         del self._file_rx[key]
+                        await async_emit(EVENT_MESH_FILE_RECEIVED, n)
 
                     await self.async_send_ack(_src, _seq)
                     return
@@ -752,6 +754,9 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
 
                 del self._fragments[key]
                 _payload = full
+
+            if _flags & MESH_FLAG_ACK:
+                await self.async_send_ack(_src,_seq)
 
             try:
                 # (mac,node_id),(_payload)
@@ -856,7 +861,16 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
             await self._async_send(_p, mac, False)
 
     def wait_for_ack(self, node_id: int, seq: int, timeout: float = 5.0) -> bool:
+        """
+        Wait for an acknowledgment (ACK) from a specific node for a given sequence number.
 
+        :param node_id: The ID of the node expected to send the acknowledgment.
+        :param seq: The sequence number of the transmitted message to wait for.
+        :param timeout: Maximum time to wait for the acknowledgment in seconds.
+
+        :return: True if the acknowledgment is received within the timeout period,
+                 False if the timeout is exceeded before receiving the ACK.
+        """
         start = time.ticks_ms()
         key = (seq, node_id)
         while key not in self._ack_set:
@@ -870,6 +884,16 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
     async def async_wait_for_ack(
         self, node_id: int, seq: int, timeout: float = 5.0
     ) -> bool:
+        """
+        Wait for an acknowledgment (ACK) from a specific node for a given sequence number.
+
+        :param node_id: The ID of the node expected to send the acknowledgment.
+        :param seq: The sequence number of the transmitted message to wait for.
+        :param timeout: Maximum time to wait for the acknowledgment in seconds.
+
+        :return: True if the acknowledgment is received within the timeout period,
+                 False if the timeout is exceeded before receiving the ACK.
+        """
         start = time.ticks_ms()
         key = (seq, node_id)
         while key not in self._ack_set:
@@ -915,56 +939,97 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
         self,
         dst_node_id: int,
         payload: str | bytearray | bytes,
+        ack: bool = False,
         not_found_error: bool = False,
-    ) -> None:
+    ) -> tuple[int, int]:
         """
         Send a data packet/packets.
+
         :param dst_node_id: The target which the message should be sent to.
-        :param payload:
-        :param not_found_error: Weather to throw an error if target is unavailable. If off at this case it is Broadcasted.
-        :return:
+        :param payload: The data to be transmitted. Can be str, bytes, or bytearray.
+        :param ack: Whether an acknowledgment (ACK) is requested from the destination node.
+                    If True, the receiver is expected to respond with an ACK for this transmission.
+                    The caller can verify receipt by passing the returned tuple to `wait_for_ack`.
+        :param not_found_error: Whether to raise an error if the target is unavailable.
+                                If False and the target is not found, the message is broadcast.
+
+        :return: A tuple (dst_node_id, sequence_number) where:
+                 - dst_node_id: The destination node ID the data was sent to.
+                 - sequence_number: The sequence number assigned to this transmission,
+                                    shared by all packets generated from the payload.
+                                    This value should be used with `wait_for_ack` if ACK was requested.
         """
+
+        _f = MESH_FLAG_UNICAST
+
+        if ack:
+            _f = _f | MESH_FLAG_ACK
 
         _mac = self.target(dst_node_id, not_found_error)
         self._up_sequence()
+
+        _seq = self._sequence
         for _p in chunk_packet(
             MESH_TYPE_DATA,
             self.node_id(),
             dst_node_id,
-            self._sequence,
+            _seq,
             self._ttl,
-            MESH_FLAG_UNICAST,
+            _f,
             payload,
             self._gateway,
         ):
             self._send(_p, _mac, True)
 
+        return dst_node_id, _seq
+
     async def async_send_data(
         self,
         dst_node_id: int,
         payload: str | bytearray | bytes,
+            ack: bool = False,
         not_found_error: bool = False,
-    ) -> None:
+    ) -> tuple[int, int]:
         """
         Send a data packet/packets.
-        :param dst_node_id:
-        :param payload:
-        :param not_found_error: Weather to throw an error if target is unavailable. If off at this case it is Broadcasted.
-        :return:
+
+        :param dst_node_id: The target which the message should be sent to.
+        :param payload: The data to be transmitted. Can be str, bytes, or bytearray.
+        :param ack: Whether an acknowledgment (ACK) is requested from the destination node.
+                    If True, the receiver is expected to respond with an ACK for this transmission.
+                    The caller can verify receipt by passing the returned tuple to `wait_for_ack`.
+        :param not_found_error: Whether to raise an error if the target is unavailable.
+                                If False and the target is not found, the message is broadcast.
+
+        :return: A tuple (dst_node_id, sequence_number) where:
+                 - dst_node_id: The destination node ID the data was sent to.
+                 - sequence_number: The sequence number assigned to this transmission,
+                                    shared by all packets generated from the payload.
+                                    This value should be used with `wait_for_ack` if ACK was requested.
         """
+
+        _f = MESH_FLAG_UNICAST
+
+        if ack:
+            _f = _f | MESH_FLAG_ACK
+
         _mac = self.target(dst_node_id, not_found_error)
         self._up_sequence()
+
+        _seq = self._sequence
         for _p in chunk_packet(
             MESH_TYPE_DATA,
             self.node_id(),
             dst_node_id,
-            self._sequence,
+            _seq,
             self._ttl,
-            MESH_FLAG_UNICAST,
+            _f,
             payload,
             self._gateway,
         ):
             await self._async_send(_p, _mac, True)
+
+        return dst_node_id, _seq
 
     async def async_send_file(
         self,
@@ -997,12 +1062,13 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
 
         _mac = self.target(dst_node_id, not_found_error)
         self._up_sequence()
+        _seq = self._sequence
 
         for _p, i in chunk_file(
             MESH_TYPE_DATA,
             self.node_id(),
             dst_node_id,
-            self._sequence,
+            _seq,
             self._ttl,
             MESH_FLAG_UNICAST,
             file_name,
@@ -1011,7 +1077,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
         ):
             await self._async_send(_p, _mac, False)
             logger().debug(f"Sending chunk: {i}")
-            await self.async_wait_for_ack(dst_node_id, self._sequence)
+            await self.async_wait_for_ack(dst_node_id, _seq)
 
     def send_file(
         self,
@@ -1044,12 +1110,13 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
 
         _mac = self.target(dst_node_id, not_found_error)
         self._up_sequence()
+        _seq = self._sequence
 
         for _p in chunk_file(
             MESH_TYPE_DATA,
             self.node_id(),
             dst_node_id,
-            self._sequence,
+            _seq,
             self._ttl,
             MESH_FLAG_UNICAST,
             file_name,
@@ -1057,7 +1124,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
             self._gateway,
         ):
             self._send(_p, _mac, False)
-            self.wait_for_ack(dst_node_id, self._sequence)
+            self.wait_for_ack(dst_node_id, _seq)
 
     async def async_send_ack(
         self, dst_node_id: int, seq: int, not_found_error: bool = False
