@@ -7,6 +7,7 @@ import asyncio
 @task(0, async_task=False, boot=True)
 def init():
     mesh().rx_enable()
+    # mesh().hello()
 
 
 @mesh_callback()

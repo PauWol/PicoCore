@@ -378,6 +378,7 @@ def init_logger(
 
 def logger() -> Logger:
     """Return the global Logger instance (must call init_logger first.)"""
+    global _logger_instance
     if _logger_instance is None:
         raise RuntimeError("Logger not initialized. Call init_logger() first.")
     return _logger_instance

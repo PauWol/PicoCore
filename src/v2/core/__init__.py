@@ -20,13 +20,12 @@ Usage:
 """
 
 import asyncio
-from machine import Pin
-from . import config
-from .root import root, start, task, on, bus, emit, manual, off, stop, add_task
-from . import io
-from . import logging
-from . import constants
-from .util import (
+from core import config
+from core.root import root, start, task, on, bus, emit, manual, off, stop, add_task
+from core import io
+from core import logging
+from core import constants
+from core.util import (
     version,
     uuid,
     uptime,
@@ -34,7 +33,7 @@ from .util import (
     BOOT_FLAG,
     _remove_boot_flag,
     _create_boot_flag,
-    ONBOARD_LED,
+    get_onboard_led,
     timed_function,
 )
 
@@ -55,13 +54,12 @@ __all__ = [
     "manual",
     "off",
     "start",
-    "ONBOARD_LED",
+    "get_onboard_led",
     "timed_function",
     "add_task",
 ]
 
 
-# call this from boot.py (early) or from Root.boot() before starting scheduler
 @timed_function
 def check_double_boot_and_maybe_enter_safe_mode():
     """
@@ -104,7 +102,17 @@ def init_log():
 
 @timed_function
 def led_init():
-    return io.Led(ONBOARD_LED, Pin.OUT)
+    """
+    Initialise the onboard LED, returning either an io.Led or a NeoLed
+    depending on the hardware detected by util.get_onboard_led().
+    """
+    r = get_onboard_led()
+    print(r)
+    if "neopixel" in r:
+        print("pixel")
+        return io.NeoLed(r[1])
+
+    return io.Led(*r)
 
 
 @timed_function

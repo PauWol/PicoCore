@@ -264,11 +264,23 @@ class Root:
 
         if self.mesh:
             self._mesh = mesh()
-            # mesh task: receive_task
+
             self.add(
                 Task(
-                    "mesh_run_task",
-                    callback=self._mesh.run,
+                    "mesh_receive_task",
+                    callback=self._mesh.receive_task,
+                    async_task=True,
+                    priority=0,
+                    enabled=True,
+                    parallel=True,
+                    boot=True,
+                )
+            )
+
+            self.add(
+                Task(
+                    "mesh_lifecycle_task",
+                    callback=self._mesh.lifecycle_task,
                     async_task=True,
                     priority=0,
                     enabled=True,

@@ -41,7 +41,7 @@ from core.queue import RingBuffer
 from core.root.bus import async_emit
 from core.logging import logger
 from core.config import get_config
-from core.util import _file_exists
+from core.util import _file_exists, deprecated
 from .packets import (
     build_packet,
     parse_packet,
@@ -756,7 +756,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
                 _payload = full
 
             if _flags & MESH_FLAG_ACK:
-                await self.async_send_ack(_src,_seq)
+                await self.async_send_ack(_src, _seq)
 
             try:
                 # (mac,node_id),(_payload)
@@ -987,7 +987,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
         self,
         dst_node_id: int,
         payload: str | bytearray | bytes,
-            ack: bool = False,
+        ack: bool = False,
         not_found_error: bool = False,
     ) -> tuple[int, int]:
         """
@@ -1274,27 +1274,80 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
         self._raw_recv_callback_data = raw
         self._on_recv = callback
 
-    async def receive_task(self):
+    async def receive_task(self) -> None:
         """
-        This is the reception task. (DEPRECATED)
-        :return:
+        This is the new version of the reception task it now only handles that.
+        Only receives if rx_enabled was called.
+
+        Returns:
+
         """
         if not self._started:
             self.start()
+
+        _airecv = self._esp.airecv
+        _sleep_ms = asyncio.sleep_ms
+
         while True:
-            if not self._rx_enabled:
-                # nothing expected → idle cheaply
-                await asyncio.sleep_ms(250)
-                continue
+            # Receive
+            if self._rx_enabled:
+                try:
+                    host, msg = await _airecv()
+                    if host and msg:
+                        await self._irq(host, msg)
+                except asyncio.TimeoutError:
+                    pass
+                except Exception as e:
+                    logger().error(f"mesh rx error: {e}")
 
-            try:
-                host, msg = await self._esp.airecv()
-                if host and msg:
-                    await self._irq(host, msg)
-            except Exception as e:
-                logger().error(f"mesh rx error: {e}")
-                await asyncio.sleep_ms(20)
+            await _sleep_ms(5)
 
+    async def lifecycle_task(self) -> None:
+        """
+        This mesh task needs to be run when receive_task is run.
+        It enables auto neighbor discovery and neighbor table cleanup.
+
+        Returns:
+
+        """
+        if not self._started:
+            self.start()
+
+        # pre-allocate to save lookup time
+        _ticks_diff = time.ticks_diff
+        _ticks_ms = time.ticks_ms
+        _sleep_ms = asyncio.sleep_ms
+        _async_hello = self.async_hello
+        _clean_neighbors = self._cleanup_neighbors
+        _clean_fragments = self._clean_fragment_buffers
+
+        now = _ticks_ms()
+
+        last_hello = now - (
+            self.node_id() % 2000
+        )  # not just time but with jitter -> not all at the same time -> collision
+        last_clean = now
+
+        while True:
+            now = _ticks_ms()
+
+            # Hello
+            if _ticks_diff(now, last_hello) > MESH_HELLO_INTERVAL:
+                await _async_hello()
+                last_hello = now
+
+            # Clean
+            if _ticks_diff(now, last_clean) > MESH_CLEAN_INTERVAL:
+                _clean_neighbors()
+                _clean_fragments(now)
+                last_clean = now
+
+            # yield
+            await _sleep_ms(5)
+
+    @deprecated(
+        "Function was split in two separate ones, to fix the mesh-rx blocking other background tasks.See lifecycle_task and receive_task."
+    )
     async def run(self):
         """
         Unified mesh loop:

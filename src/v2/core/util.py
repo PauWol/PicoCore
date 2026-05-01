@@ -10,7 +10,7 @@ import os
 import sys
 import machine
 import uasyncio as asyncio
-from .constants import BOOT_FLAG, BOOT_WINDOW_MS
+from core.constants import BOOT_FLAG, BOOT_WINDOW_MS
 
 
 def _file_exists(name):
@@ -184,35 +184,55 @@ def version() -> list[str] | None:
         ) from e
 
 
-def get_onboard_led() -> int | str:
+_ONBOARD_LED_CACHE = None
+
+
+def get_onboard_led() -> tuple[str, int] | tuple[int]:
     """
-    Get the onboard LED pin. (Platform dependent)
-    :return: The onboard LED pin.
+    Get the built-in onboard Led.
+    This function tries to detect and then returns the then cached value.
+
+
+    :return: result is either tuple("neopixel",pin_number) or if regular led tuple(pin_number) -> detected using board information
     """
+    global _ONBOARD_LED_CACHE
+    if _ONBOARD_LED_CACHE is not None:
+        return _ONBOARD_LED_CACHE
+
     platform = sys.platform
 
-    if platform.startswith("rp2"):  # Pi Pico
-        try:
-            return "LED"
-        except Exception as e:
-            raise RuntimeError("Pico LED not available") from e
+    impl = getattr(sys, "implementation", None)
+    build = getattr(impl, "_build", "")
+    machine_tag = getattr(impl, "_machine", "")
 
-    if platform.startswith("esp32"):  # ESP32, ESP32-C3, S2, S3
-        candidate_pins = (2, 8, 19, 38)  # common boards
+    if platform == "rp2":
+        result = "LED"
 
-        for pin in candidate_pins:
-            try:
-                p = machine.Pin(pin, machine.Pin.OUT)
-                p.value(1)  # test LED ON
-                p.value(0)  # OFF
-                return pin
-            except (ValueError, OSError):
-                pass
+    elif platform == "esp32":
+        if "S3" in build or "S3" in machine_tag:
+            result = ("neopixel", 38)
+        elif "C3" in build or "C3" in machine_tag:
+            result = ("neopixel", 8)
+        else:
+            # minimal probing
+            Pin = machine.Pin
+            for pin in (2, 8):
+                try:
+                    p = Pin(pin, Pin.OUT)
+                    p.value(1)
+                    p.value(0)
+                    result = pin
+                    break
+                except Exception:
+                    pass
+            else:
+                raise RuntimeError("No LED found")
 
-    raise RuntimeError("Unsupported platform: " + platform)
+    else:
+        raise RuntimeError("Unsupported platform")
 
-
-ONBOARD_LED: str | int | None = get_onboard_led()
+    _ONBOARD_LED_CACHE = result
+    return result
 
 
 def timed_function(f, *_args, **_kwargs):
@@ -235,3 +255,26 @@ def timed_function(f, *_args, **_kwargs):
         return result
 
     return new_func
+
+
+def deprecated(reason=""):
+    """
+    Mark a function as DEPRECATED and log a warning if used.
+
+    Args:
+        reason: The reason or what to do now.
+
+    Returns:
+
+    """
+
+    def deco(fn):
+        def wrapper(*args, **kwargs):
+            from core.logging import logger
+
+            logger().warn(f"{fn.__name__} is deprecated. {reason}")
+            return fn(*args, **kwargs)
+
+        return wrapper
+
+    return deco
