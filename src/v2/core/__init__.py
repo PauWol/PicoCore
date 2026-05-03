@@ -107,9 +107,7 @@ def led_init():
     depending on the hardware detected by util.get_onboard_led().
     """
     r = get_onboard_led()
-    print(r)
     if "neopixel" in r:
-        print("pixel")
         return io.NeoLed(r[1])
 
     return io.Led(*r)
@@ -139,7 +137,8 @@ def init():
     # schedule root loop boot blink
     @task(None, async_task=True, boot=True, parallel=True)
     async def boot_led():
-        await led.async_blink(6, 0.2)
+        await led.async_blink(3, 0.2)
 
     if safe_boot:
         led.on()
+        stop()

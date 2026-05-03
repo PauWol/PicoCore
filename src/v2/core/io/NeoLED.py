@@ -29,20 +29,21 @@ Usage (inside __init__.py)
     led.finish_boot(safe_mode=False)            # end animation
 """
 
+from micropython import const
 import machine
 import neopixel
 import asyncio
 
 # ── colour palette ────────────────────────────────────────────────────────────
 
-_OFF = (0, 0, 0)
-_RED = (255, 0, 0)
-_GREEN = (0, 255, 0)
-_BLUE = (0, 0, 255)
-_CYAN = (0, 255, 255)
-_YELLOW = (255, 180, 0)
-_INDIGO = (60, 0, 180)
-_WHITE = (255, 255, 255)
+OFF = const((0, 0, 0))
+RED = const((255, 0, 0))
+GREEN = const((0, 255, 0))
+BLUE = const((0, 0, 255))
+CYAN = const((0, 255, 255))
+YELLOW = const((255, 180, 0))
+INDIGO = const((60, 0, 180))
+WHITE = const((255, 255, 255))
 
 # Global brightness scale – keeps the pixel from being blinding on a desk.
 # 0.06 ≈ 6 % of full power; plenty visible in normal lighting.
@@ -79,7 +80,7 @@ class NeoLed:
         brightness: float = _GLOBAL_BRIGHTNESS,
     ):
         self._np = neopixel.NeoPixel(machine.Pin(pin), num_pixels)
-        self._color = _GREEN  # default "on" colour
+        self._color = GREEN  # default "on" colour
         self._brightness = brightness
         self._boot_state = "config"
         self._boot_done = False
@@ -105,7 +106,7 @@ class NeoLed:
 
     def off(self):
         """Turn the pixel off."""
-        self._write(_OFF)
+        self._write(OFF)
 
     def blink(self, times: int = 3, delay: float = 0.2, color: tuple = None):
         """
@@ -121,7 +122,7 @@ class NeoLed:
         for _ in range(times):
             self._write(c)
             time.sleep(delay)
-            self._write(_OFF)
+            self._write(OFF)
             time.sleep(delay)
 
     async def async_blink(
@@ -141,5 +142,5 @@ class NeoLed:
         for _ in range(times):
             self._write(c)
             await asyncio.sleep(delay)
-            self._write(_OFF)
+            self._write(OFF)
             await asyncio.sleep(delay)

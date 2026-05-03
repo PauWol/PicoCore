@@ -4,7 +4,9 @@ PicoCore V2 Comms Mesh Main
 This module provides the PicoCore V2 Comms Mesh main class.
 """
 
+import io
 import os
+import sys
 import time
 import gc
 from network import WLAN, STA_IF
@@ -577,9 +579,11 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
 
         key = (_src, _seq)
 
-        # DROP duplicates if not partial
+        # DROP duplicates if not partial or hello
         is_stream = _flags & (MESH_FLAG_FILE | MESH_FLAG_PARTIAL)
-        if not is_stream and self._seen(*key):
+        is_hello = _ptype == MESH_TYPE_HELLO
+
+        if not is_stream and not is_hello and self._seen(*key):
             return
 
         if _flags & MESH_FLAG_GATEWAY:
@@ -592,6 +596,10 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
 
         if _ptype == MESH_TYPE_HELLO:
             logger().debug("HELLO packet received")
+
+            to_remove = [k for k in self._seen_packets if k[0] == _src]
+            for k in to_remove:
+                self._seen_packets.discard(k)
 
             if _flags & MESH_FLAG_ACK:
                 await self.async_hello_ack(host)
@@ -771,7 +779,25 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
                     "(e.g. 'await asyncio.sleep(0)') to avoid blocking the scheduler."
                 )
                 logger().error(f"Original Mesh receive error: {e}")
+            except UnicodeError as e:
+                logger().error(
+                    "Mesh UnicodeError: payload could not be decoded as UTF-8.\n"
+                    "This usually means the sender transmitted raw binary data (e.g. struct-packed bytes).\n"
+                    "Fix options:\n"
+                    "  1. Register the callback with raw=True to receive bytes without decoding:\n"
+                    "       @mesh_callback(raw=True)\n"
+                    "  2. Base64-encode the payload before sending:\n"
+                    "       import ubinascii\n"
+                    "       encoded = ubinascii.b2a_base64(raw_bytes).strip()\n"
+                    "     and decode it in the callback:\n"
+                    "       ubinascii.a2b_base64(msg)"
+                )
+                logger().error(f"Original Mesh receive error: {e}")
+
             except Exception as e:
+                buf = io.StringIO()
+                sys.print_exception(e, buf)
+                logger().error(buf.getvalue())
                 logger().error(f"Mesh receive error in callback: {e}")
 
     def _hello(self) -> tuple[bytearray, bytes]:
@@ -1298,6 +1324,9 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
                 except asyncio.TimeoutError:
                     pass
                 except Exception as e:
+                    buf = io.StringIO()
+                    sys.print_exception(e, buf)
+                    logger().error(buf.getvalue())
                     logger().error(f"mesh rx error: {e}")
 
             await _sleep_ms(5)
