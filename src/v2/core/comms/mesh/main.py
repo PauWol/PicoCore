@@ -44,7 +44,7 @@ from core.root.bus import async_emit
 from core.logging import logger
 from core.config import get_config
 from core.util import _file_exists, deprecated
-from .packets import (
+from core.comms.mesh.packets import (
     build_packet,
     parse_packet,
     chunk_packet,
@@ -206,7 +206,7 @@ class Mesh:  # pylint: disable=too-many-instance-attributes
 
         if len(self._seen_queue) > self._seen_limit:
             old = self._seen_queue.get()
-            self._seen_packets.remove(old)
+            self._seen_packets.discard(old)
 
         return False
 
