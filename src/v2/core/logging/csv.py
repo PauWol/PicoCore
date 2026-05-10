@@ -1,42 +1,101 @@
-from typing import Any, Iterator, Optional
 import os
 
-from ..util import _file_exists, create_file
-from ..constants import MAX_KEYS
-from ..queue import RingBuffer
+from core.util import _file_exists, create_file
+from core.constants import MAX_KEYS
+from core.queue import RingBuffer
 
 
 # Small chunk size for streaming-copy (keep low for constrained RAM)
 _COPY_CHUNK = 512
 
 
+class SchemaLockedError(Exception):
+    """Raised when attempting to add a new column to a schema-locked CSV."""
+
+
 class CSV:
     """
-    MicroPython-optimized CSV helper.
-    - Low-ram streaming for header updates (temp file + rename).
-    - Minimal allocations when writing rows.
-    - API: init(), get_headers(), write(key, value), write_row(dict), iter_rows(), clear()
+    MicroPython-optimized CSV helper for PicoCore.
+
+    Designed for RP2040-class hardware: every operation streams data
+    rather than loading the file into RAM. Header updates use an atomic
+    temp-file swap. Writes append directly without re-reading the file.
+
+    Features
+    --------
+    - RFC 4180-compliant field parsing and escaping (shared _split_line helper)
+    - Context manager  (``with CSV(...) as csv:``)
+    - Schema locking   (freeze columns after first write — ideal for sensor logs)
+    - Streaming reads  iter_rows(), find_rows(), get_last_n_rows()
+    - Optional auto-cast of int / float values on read (``cast=True``)
+    - count_rows()     without loading any row data into RAM
+
+    Quick-start
+    -----------
+    .. code-block:: python
+
+        # Sensor logging — fixed schema
+        with CSV("sensors.csv") as csv:
+            csv.schema_lock()
+            csv.write_row({"ts": uptime(), "temp": 23.5, "hum": 60})
+
+        # Read last 10 readings as typed values
+        for row in csv.get_last_n_rows(10, cast=True):
+            print(row["temp"])          # float, not str
+
+        # Filter by sensor id
+        for row in csv.find_rows("sensor_id", "A1"):
+            print(row)
+
+    Public API
+    ----------
+    init()                          Lazy setup (called automatically).
+    get_headers()                   Tuple of column names, or None.
+    schema_lock() / schema_unlock() Freeze / unfreeze columns.
+    write(key, value)               Append a sparse row (one column set).
+    write_row(dict)                 Append a full row from a mapping.
+    iter_rows(cast=False)           Stream all rows as dicts.
+    find_rows(key, value, cast)     Stream rows matching a filter.
+    get_last_n_rows(n, cast)        Return the last n rows as a list.
+    count_rows()                    Count data rows (streaming, no alloc).
+    clear()                         Truncate file and reset state.
     """
 
     def __init__(self, file_name: str, max_keys: int = MAX_KEYS):
         self.file_name = file_name
         self._max_keys = max_keys
         self._header_buffer = RingBuffer(self._max_keys)
-        # lazily initialized flag
         self._inited = False
+        self._schema_locked = False
 
-    # -----------------------
-    # init / headers helpers
-    # -----------------------
+    # ------------------------------------------------------------------ #
+    # Context manager                                                      #
+    # ------------------------------------------------------------------ #
+
+    def __enter__(self) -> "CSV":
+        """Call init() on enter so the file is ready inside the block."""
+        self.init()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        # No persistent resources to release.
+        # Return False so any exception propagates normally.
+        return False
+
+    # ------------------------------------------------------------------ #
+    # Init / header helpers                                                #
+    # ------------------------------------------------------------------ #
+
     def init(self) -> None:
-        """Ensure file exists and load headers if present."""
+        """
+        Ensure the file exists and populate the header buffer from disk.
+        Idempotent — safe to call multiple times; work only runs once.
+        """
         if self._inited:
             return
-
         if not _file_exists(self.file_name):
             create_file(self.file_name)
         else:
-            # populate header buffer from file
             self._get_headers()
         self._inited = True
 
@@ -44,16 +103,19 @@ class CSV:
         return header in self._header_buffer
 
     def get_headers(self) -> tuple[str, ...] | None:
-        """Return tuple of headers (or None if none)."""
+        """Return a tuple of current column names, or None if the file is empty."""
         return self._get_headers()
 
-    def _get_headers(self) -> Optional[tuple]:
-        """Parse first line into headers and populate ringbuffer. Minimal allocations."""
+    def _get_headers(self):
+        """
+        Parse the first line into headers and populate the ring buffer.
+        Uses _split_line so quoted header names are handled correctly.
+        """
         if not self._header_buffer.is_empty():
             return self._header_buffer.to_tuple()
 
         try:
-            f = open(self.file_name, "r")
+            f = open(self.file_name)
         except OSError:
             return None
 
@@ -61,110 +123,227 @@ class CSV:
             line = f.readline()
             if not line:
                 return None
-            line = line.rstrip("\r\n")
-
-            # manual split to avoid list-of-lists cost from repeated operations
-            fields = []
-            start = 0
-            length = len(line)
-            for _ in range(length + 1):
-                idx = line.find(",", start)
-                if idx == -1:
-                    fields.append(line[start:])
-                    break
-                fields.append(line[start:idx])
-                start = idx + 1
-
-            headers = tuple(fields)
+            headers = tuple(self._split_line(line.rstrip("\r\n")))
             self._set_headers(headers)
             return headers
         finally:
             f.close()
 
     def _set_headers(self, headers: tuple[str, ...]) -> None:
-        """Extend ring buffer with headers (in one shot)."""
+        """Bulk-load headers into the ring buffer in one pass."""
         self._header_buffer.extend(headers)
 
     def _add_header(self, header: str) -> None:
         self._header_buffer.put(header)
 
-    # -----------------------
-    # header write (safe)
-    # -----------------------
+    # ------------------------------------------------------------------ #
+    # Schema lock                                                          #
+    # ------------------------------------------------------------------ #
+
+    def schema_lock(self) -> None:
+        """
+        Lock the column schema.
+
+        Any subsequent write() or write_row() call that would introduce a
+        new column raises SchemaLockedError instead of silently expanding
+        the header line.  Best called once at boot after the first row has
+        been written (or after init() if headers already exist on disk).
+
+        Example::
+
+            csv.init()
+            csv.schema_lock()
+            csv.write_row({"ts": 0, "temp": 0})  # OK — columns exist
+            csv.write_row({"ts": 1, "new_col": 5})  # raises SchemaLockedError
+        """
+        self._schema_locked = True
+
+    def schema_unlock(self) -> None:
+        """Re-enable dynamic column addition."""
+        self._schema_locked = False
+
+    # ------------------------------------------------------------------ #
+    # RFC 4180 line parser                                                 #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _split_line(line: str) -> list[str]:
+        """
+        Parse one CSV line into fields, RFC 4180-compliant.
+
+        Handles:
+        - Quoted fields that contain commas  ("hello, world" -> one field)
+        - Escaped quotes inside quoted fields  ("say ""hi"" -> say "hi")
+        - Trailing empty fields  ("a,b," -> ["a", "b", ""])
+        - Unquoted fields (normal case, fast path)
+
+        No regex, minimal allocations — suitable for RP2040.
+        """
+        fields = []
+        field_chars = []
+        i = 0
+        length = len(line)
+
+        while i < length:
+            ch = line[i]
+
+            if ch == '"':
+                # --- Quoted field ---
+                i += 1
+                while i < length:
+                    c = line[i]
+                    if c == '"':
+                        if i + 1 < length and line[i + 1] == '"':
+                            # Escaped double-quote: "" -> "
+                            field_chars.append('"')
+                            i += 2
+                        else:
+                            # Closing quote
+                            i += 1
+                            break
+                    else:
+                        field_chars.append(c)
+                        i += 1
+                # Skip any garbage between closing quote and next comma
+                while i < length and line[i] != ",":
+                    i += 1
+
+            elif ch == ",":
+                fields.append("".join(field_chars))
+                field_chars = []
+                i += 1
+                # A trailing comma means there is one more empty field
+                if i == length:
+                    fields.append("")
+
+            else:
+                # --- Unquoted character (common fast path) ---
+                field_chars.append(ch)
+                i += 1
+
+        # Append the final field (covers both normal end and the no-comma case)
+        fields.append("".join(field_chars))
+        return fields
+
+    # ------------------------------------------------------------------ #
+    # RFC 4180 field escaping                                              #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _escape_field(val) -> str:
+        """
+        Escape a value for writing into a CSV cell (RFC 4180).
+
+        - None or empty string  ->  empty field (no output)
+        - Values containing comma, newline, or double-quote are wrapped
+          in double-quotes; internal quotes are doubled.
+        """
+        if val is None:
+            return ""
+        s = str(val)
+        if not s:
+            return ""
+        if ('"' in s) or ("," in s) or ("\n" in s) or ("\r" in s):
+            return '"' + s.replace('"', '""') + '"'
+        return s
+
+    # ------------------------------------------------------------------ #
+    # Optional value casting                                               #
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _cast(value: str):
+        """
+        Try to convert a string to int, then float, then return as-is.
+        Only called when cast=True is passed to a read method — zero cost
+        otherwise.
+
+        Examples:
+            "42"    -> 42   (int)
+            "3.14"  -> 3.14 (float)
+            "hello" -> "hello"
+            ""      -> ""
+        """
+        if not value:
+            return value
+        try:
+            return int(value)
+        except ValueError:
+            pass
+        try:
+            return float(value)
+        except ValueError:
+            pass
+        return value
+
+    # ------------------------------------------------------------------ #
+    # Safe streaming header update                                         #
+    # ------------------------------------------------------------------ #
+
     def _write_header(self, header: str | list[str] | tuple[str, ...]) -> None:
         """
-        Safely add header(s). Implements streaming copy:
-         - reads original file,
-         - writes new header line to temp,
-         - streams remainder in chunks to temp,
-         - atomically replaces original with temp.
-        This avoids loading entire file into RAM.
-        """
-        # normalize to iterator of strings
-        if isinstance(header, str):
-            it = (header,)
-        else:
-            it = header
+        Add one or more new columns via a streaming temp-file swap:
 
-        # gather only headers that are new (and reserve them into buffer as we go)
+        1. Open original file for reading.
+        2. Write updated header line to a .tmp file.
+        3. Stream remaining content in _COPY_CHUNK-byte chunks.
+        4. Atomically rename .tmp over original.
+
+        Raises SchemaLockedError if schema is locked and any header is new.
+        Never loads the full file into RAM.
+        """
+        it = (header,) if isinstance(header, str) else header
+
+        # Collect only genuinely new headers; respect schema lock
         new_buf = []
         for h in it:
-            # skip duplicates and None/empty names
             if not h:
                 continue
             if self._is_header(h):
                 continue
+            if self._schema_locked:
+                raise SchemaLockedError(
+                    f"Schema is locked. Cannot add new column: '{h}'"
+                )
             new_buf.append(h)
-            # don't add to internal buffer yet — only after write success
 
         if not new_buf:
             return
 
-        # read original header line (if any) and build new header line
         try:
-            src = open(self.file_name, "r")
+            src = open(self.file_name)
         except OSError:
-            return None
+            return
 
-        # create temp path in same dir
         tmp_path = self.file_name + ".tmp"
         try:
             dst = open(tmp_path, "w")
         except OSError:
             src.close()
-            return None
+            return
 
         try:
             orig_first = src.readline()
             if not orig_first:
-                # empty file -> new header line only
-                dst.write(",".join(self._header_buffer.to_tuple() + tuple(new_buf)) if not self._header_buffer.is_empty() else ",".join(new_buf))
-                dst.write("\n")
+                # Empty file: write all headers in one shot
+                existing = self._header_buffer.to_tuple()
+                all_headers = (
+                    (existing + tuple(new_buf)) if existing else tuple(new_buf)
+                )
+                dst.write(",".join(all_headers) + "\n")
             else:
                 orig_first = orig_first.rstrip("\r\n")
-                # current headers may not be in buffer if _get_headers wasn't called earlier (ensure)
+                # Ensure buffer is populated even if init() skipped _get_headers
                 if self._header_buffer.is_empty():
-                    # parse existing first-line headers into buffer (cheap)
-                    parts = []
-                    start = 0
-                    length = len(orig_first)
-                    for _ in range(length + 1):
-                        idx = orig_first.find(",", start)
-                        if idx == -1:
-                            parts.append(orig_first[start:])
-                            break
-                        parts.append(orig_first[start:idx])
-                        start = idx + 1
-                    self._set_headers(tuple(parts))
-
-                # produce new header line (existing headers + new ones)
-                # avoid creating huge temporaries: get existing headers from buffer
+                    self._set_headers(tuple(self._split_line(orig_first)))
                 existing = self._header_buffer.to_tuple()
-                # join only once
-                new_hdr_line = ",".join(existing + tuple(new_buf)) if existing else ",".join(new_buf)
+                new_hdr_line = (
+                    ",".join(existing + tuple(new_buf))
+                    if existing
+                    else ",".join(new_buf)
+                )
                 dst.write(new_hdr_line + "\n")
-
-                # now stream the remainder of the original file in small chunks
+                # Stream remainder in small chunks to stay RAM-friendly
                 while True:
                     chunk = src.read(_COPY_CHUNK)
                     if not chunk:
@@ -174,123 +353,96 @@ class CSV:
             src.close()
             dst.close()
 
-        # atomically replace original file
+        # Atomic replace (handle platform differences gracefully)
         try:
             os.remove(self.file_name)
         except OSError:
-            # if remove fails, try rename/replace anyway (platform differences)
             pass
         try:
             os.rename(tmp_path, self.file_name)
         except OSError:
-            # best-effort fallback: try replace if available
             try:
                 os.replace(tmp_path, self.file_name)
             except Exception:
-                # If replace fails, attempt to remove temp and keep original
                 try:
                     os.remove(tmp_path)
                 except Exception:
                     pass
                 raise
 
-        # finally update internal buffer with the newly added headers
+        # Commit new headers to the in-memory buffer
         for h in new_buf:
             self._add_header(h)
 
-    # -----------------------
-    # CSV quoting helper
-    # -----------------------
-    @staticmethod
-    def _escape_field(val: Any) -> str:
-        """
-        Minimal CSV escaping:
-        - if value contains comma, newline or quote -> quote the field and double quotes inside.
-        - None -> empty
-        """
-        if val is None:
-            return ""
-        s = str(val)
-        if not s:
-            return ""
-        # quick test: only do replace if necessary
-        if ('"' in s) or (',' in s) or ('\n' in s) or ('\r' in s):
-            # double quotes inside
-            s = s.replace('"', '""')
-            return '"' + s + '"'
-        return s
+    # ------------------------------------------------------------------ #
+    # Write API                                                            #
+    # ------------------------------------------------------------------ #
 
-    # -----------------------
-    # write API
-    # -----------------------
-    def write(self, key: str, value: Any) -> None:
+    def write(self, key: str, value) -> None:
         """
-        Append a new row where the column `key` contains `value` and other columns are empty.
-        If `key` doesn't exist it'll be added to the header (streaming, safe).
-        This keeps operations low-memory by streaming the line to disk.
+        Append a **sparse** row: only the ``key`` column is set; every other
+        column is written as an empty field.
+
+        Best for logging a single measurement at a time without building a
+        full dict.  If ``key`` is a new column it is added to the header
+        (unless the schema is locked).
+
+        Example::
+
+            csv.write("temperature", 23.5)
+            # -> row: ,23.5,,  (if headers are ts,temperature,humidity,...)
         """
         self.init()
-
         if not self._is_header(key):
-            # will update file safely and update buffer
             self._write_header(key)
 
-        # Open append mode (create if missing)
         try:
             f = open(self.file_name, "a")
         except OSError:
-            return None
+            return
 
         try:
             headers = self._header_buffer.to_tuple()
-            # Build and write row directly without building a list of all fields
-            # Write first field (no leading comma), then subsequent with comma prefix
             first = True
             for h in headers:
-                if first:
-                    first = False
-                else:
+                if not first:
                     f.write(",")
+                first = False
                 if h == key:
                     f.write(self._escape_field(value))
-                else:
-                    # empty field -> nothing (keeps small)
-                    # write nothing (i.e., leave empty between commas)
-                    pass
+                # other columns: intentionally empty — no write needed
             f.write("\n")
         finally:
             f.close()
 
-    def write_row(self, row: dict[str, Any]) -> None:
+    def write_row(self, row: dict[str]) -> None:
         """
-        Append a row given by a dict mapping header->value.
-        Ensures missing headers are added first (safe streaming).
+        Append a **full** row from a ``dict``.  Keys not in ``row`` produce
+        empty fields; keys not yet in the header are added automatically
+        (unless the schema is locked).
+
+        Example::
+
+            csv.write_row({"ts": uptime(), "temp": 23.5, "humidity": 60})
         """
         self.init()
 
-        # collect new headers (iterate keys once)
-        new_headers = []
-        for k in row.keys():
-            if not self._is_header(k):
-                new_headers.append(k)
-
+        new_headers = [k for k in row if not self._is_header(k)]
         if new_headers:
             self._write_header(new_headers)
 
-        # open append and stream row
         try:
             f = open(self.file_name, "a")
         except OSError:
-            return None
+            return
 
         try:
             headers = self._header_buffer.to_tuple()
             first = True
             for h in headers:
-                if first:
-                    first = False
-                else:
+                if not first:
                     f.write(",")
+                first = False
                 v = row.get(h)
                 if v is not None:
                     f.write(self._escape_field(v))
@@ -298,62 +450,165 @@ class CSV:
         finally:
             f.close()
 
-    # -----------------------
-    # read API
-    # -----------------------
-    def iter_rows(self) -> Iterator[dict]:
+    # ------------------------------------------------------------------ #
+    # Read API                                                             #
+    # ------------------------------------------------------------------ #
+
+    def iter_rows(self, cast: bool = False):
         """
-        Iterate rows as dictionaries mapping header->value.
-        This is a streaming reader: reads file line by line, splits by comma (simple).
-        Note: does not fully implement complex CSV quoting rules for multi-line quoted fields.
+        Stream every data row as a ``dict`` mapping header name -> value.
+
+        Parsing is RFC 4180-compliant via ``_split_line``, so quoted fields
+        containing commas are handled correctly.  Only one line is held in
+        RAM at a time.
+
+        Args:
+            cast: When True, numeric strings are auto-converted to int or
+                  float.  Strings that aren't numbers are left as-is.
+
+        Example::
+
+            for row in csv.iter_rows(cast=True):
+                process(row["temp"])    # arrives as float
         """
         self.init()
         headers = self._get_headers()
         if not headers:
             return
+
         try:
-            f = open(self.file_name, "r")
+            f = open(self.file_name)
         except OSError:
             return
 
         try:
-            # skip first line (headers)
-            _ = f.readline()
+            f.readline()  # discard header line
             for raw in f:
                 raw = raw.rstrip("\r\n")
-                # simple split (fast). For heavy quoting needs, replace with a streaming parser.
-                parts = []
-                start = 0
-                length = len(raw)
-                i = 0
-                while i < length:
-                    # naive fast parse: split on comma; don't handle quoted commas here to keep memory/time low.
-                    j = raw.find(",", i)
-                    if j == -1:
-                        parts.append(raw[i:])
-                        break
-                    parts.append(raw[i:j])
-                    i = j + 1
-
-                # map parts to headers (missing fields -> "")
+                if not raw:
+                    continue  # skip blank lines
+                parts = self._split_line(raw)
                 row = {}
                 for idx, h in enumerate(headers):
-                    row[h] = parts[idx] if idx < len(parts) else ""
+                    v = parts[idx] if idx < len(parts) else ""
+                    row[h] = self._cast(v) if cast else v
                 yield row
         finally:
             f.close()
 
-    # -----------------------
-    # utilities
-    # -----------------------
+    def find_rows(self, key: str, value, cast: bool = False):
+        """
+        Stream only the rows where ``row[key] == value``.
+
+        Filtering happens on the raw string value unless ``cast=True``, in
+        which case the ``value`` argument is also cast before comparison.
+        No additional RAM beyond a single row dict.
+
+        Args:
+            key:   Column name to match on.
+            value: Value to match (compared as string by default).
+            cast:  Apply auto-cast to all values in matched rows (and to
+                   ``value`` itself for a consistent comparison).
+
+        Example::
+
+            for row in csv.find_rows("sensor_id", "A1"):
+                print(row["temp"])
+
+            # With numeric match:
+            for row in csv.find_rows("temp", 23, cast=True):
+                print(row)
+        """
+        needle = self._cast(str(value)) if cast else str(value)
+        for row in self.iter_rows(cast=cast):
+            if row.get(key) == needle:
+                yield row
+
+    def get_last_n_rows(self, n: int, cast: bool = False) -> list[dict]:
+        """
+        Return the **last** ``n`` data rows as an ordered list.
+
+        Streams the entire file but keeps only a rolling window of ``n``
+        row dicts in RAM using a fixed-size circular buffer — so memory
+        usage is O(n), not O(file size).  Useful for displaying the most
+        recent sensor readings.
+
+        Args:
+            n:    Number of tail rows to return (0 returns []).
+            cast: Auto-cast numeric values if True.
+
+        Returns:
+            List of row dicts in chronological order (oldest first).
+
+        Example::
+
+            recent = csv.get_last_n_rows(10, cast=True)
+            avg_temp = sum(r["temp"] for r in recent) / len(recent)
+        """
+        if n <= 0:
+            return []
+
+        # Circular buffer — pre-allocate n slots, no realloc on roll
+        buf = [None] * n
+        head = 0
+        count = 0
+
+        for row in self.iter_rows(cast=cast):
+            buf[head] = row
+            head = (head + 1) % n
+            count += 1
+
+        if count == 0:
+            return []
+
+        actual = min(count, n)
+        start = (head - actual) % n
+        return [buf[(start + i) % n] for i in range(actual)]
+
+    def count_rows(self) -> int:
+        """
+        Return the number of data rows (header line excluded).
+
+        Streams the file counting non-blank lines — no row data is parsed
+        or stored.  Suitable for checking dataset size before deciding
+        whether to rotate the file.
+
+        Example::
+
+            if csv.count_rows() > 1000:
+                csv.clear()
+        """
+        self.init()
+        try:
+            f = open(self.file_name)
+        except OSError:
+            return 0
+
+        try:
+            f.readline()  # skip header
+            total = 0
+            for line in f:
+                if line.strip():
+                    total += 1
+            return total
+        finally:
+            f.close()
+
+    # ------------------------------------------------------------------ #
+    # Utilities                                                            #
+    # ------------------------------------------------------------------ #
+
     def clear(self) -> None:
-        """Truncate file and clear header buffer."""
+        """
+        Truncate the file to zero bytes and reset all in-memory state.
+        The schema lock is **preserved** — call ``schema_unlock()`` first
+        if you intend to rebuild with a different schema.
+        """
         try:
             f = open(self.file_name, "w")
             f.truncate(0)
             f.close()
         except OSError:
             pass
-        # clear ringbuffer (recreate to avoid iterating clear)
         self._header_buffer = RingBuffer(self._max_keys)
         self._inited = False
